@@ -104,7 +104,7 @@ class ActionExecutor @Inject constructor(
             val service = AutoMateAccessibilityService.instance
             if (service != null) {
                 // Use accessibility service to kill app via recents
-                service.performGlobalAction(android.view.accessibility.AccessibilityService.GLOBAL_ACTION_RECENTS)
+                service.performGlobalRecents()
                 Thread.sleep(500)
 
                 // Find the app in recents and swipe it away

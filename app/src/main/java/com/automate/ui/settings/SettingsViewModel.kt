@@ -53,7 +53,7 @@ class SettingsViewModel @Inject constructor(
             )
 
             // Schedule morning prompt if enabled
-            if (morningPromptEnabled) {
+            if (morningPrompt) {
                 scheduleMorningPrompt()
             }
         }
