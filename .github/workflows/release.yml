@@ -1,0 +1,52 @@
+name: Build Release APK
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease
+
+      - name: Get version name
+        id: version
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Upload Release APK
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/release/*.apk
+          body: |
+            AutoMate ${{ steps.version.outputs.tag }}
+            
+            ## Installation
+            1. Download the APK below
+            2. Open it on your Android phone
+            3. Enable "Install from Unknown Sources" if prompted
+            4. Follow the setup wizard
+            
+            ## Permissions Needed
+            - Accessibility Service (for UI automation)
+            - Location (for geofencing)
+            - Notifications
