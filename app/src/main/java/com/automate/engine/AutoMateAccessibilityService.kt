@@ -22,20 +22,18 @@ class AutoMateAccessibilityService : AccessibilityService() {
     var isRunning = false
         private set
 
-    var currentRootNode: AccessibilityNodeInfo?
+    val currentRootNode: AccessibilityNodeInfo?
         get() = rootInActiveWindow
-        private set
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         isRunning = true
 
         serviceInfo = serviceInfo.apply {
-            eventTypes = AccessibilityEvent.TYPE_ALL_MASK
+            eventTypes = AccessibilityEvent.TYPES_ALL_MASK
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
-                    AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
-                    AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEYEvents
+                    AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
             notificationTimeout = 100
             packageNames = null // Listen to all apps
         }
