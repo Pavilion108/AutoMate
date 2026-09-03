@@ -187,7 +187,8 @@ class ActionExecutor @Inject constructor(
             attempts++
 
             // Check for popups
-            val root = service.rootInActiveWindow ?: run {
+            val root = service.rootInActiveWindow
+            if (root == null) {
                 delay(action.retryDelayMs)
                 continue
             }

@@ -15,6 +15,7 @@ import com.automate.domain.model.Trigger
 import com.automate.domain.model.TriggerType
 import com.google.android.gms.location.*
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.suspendCancellableCoroutine
 import javax.inject.Inject
@@ -32,6 +33,8 @@ class TriggerManager @Inject constructor(
         LocationServices.getFusedLocationProviderClient(context)
     private val geofencingClient: GeofencingClient =
         LocationServices.getGeofencingClient(context)
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private var lastKnownLocation: Pair<Double, Double>? = null
     private var locationCallback: LocationCallback? = null
@@ -122,7 +125,9 @@ class TriggerManager @Inject constructor(
             override fun onLocationResult(result: LocationResult) {
                 result.lastLocation?.let { location ->
                     lastKnownLocation = Pair(location.latitude, location.longitude)
-                    checkDistanceFromTimeInLocation(location)
+                    scope.launch {
+                        checkDistanceFromTimeInLocation(location)
+                    }
                 }
             }
         }

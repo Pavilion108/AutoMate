@@ -8,7 +8,7 @@ import android.os.Bundle
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.view.accessibility.AccessibilityService
+import android.accessibilityservice.AccessibilityService
 import com.automate.domain.model.Action
 import com.automate.domain.model.ActionType
 import kotlinx.coroutines.*

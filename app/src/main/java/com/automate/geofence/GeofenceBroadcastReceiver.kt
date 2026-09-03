@@ -70,7 +70,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         }
 
         val transition = event.geofenceTransition
-        val triggeringGeofences = event.triggeringGeofences
+        val triggeringGeofences = event.triggeringGeofences ?: return
 
         scope.launch {
             when (transition) {
