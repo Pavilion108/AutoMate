@@ -23,7 +23,7 @@ class TaskRunner @Inject constructor(
     @ApplicationContext private val context: Context,
     private val actionExecutor: ActionExecutor,
     private val variableStore: VariableStore,
-    private val triggerManager: TriggerManager
+    private val triggerManagerProvider: dagger.Lazy<TriggerManager>
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var notificationId = 2000
@@ -87,14 +87,14 @@ class TaskRunner @Inject constructor(
             if (goingToWork) {
                 Log.i(TAG, "User is going to work - enabling geofence monitoring")
                 variableStore.setArmed(true)
-                triggerManager.enableGeofences()
+                triggerManagerProvider.get().enableGeofences()
                 showStatusNotification("Going to work", "Monitoring your location for check-in")
             } else {
                 Log.i(TAG, "User is staying home - disabling everything")
                 variableStore.setArmed(false)
                 variableStore.setTimedInToday(false)
                 variableStore.setExitWatch(false)
-                triggerManager.disableGeofences()
+                triggerManagerProvider.get().disableGeofences()
                 showStatusNotification("Staying home", "AutoMate is off for today")
             }
         }
@@ -149,7 +149,7 @@ class TaskRunner @Inject constructor(
                         variableStore.setTimedInToday(true)
 
                         // Record time-in location
-                        val location = triggerManager.getLastKnownLocation()
+                        val location = triggerManagerProvider.get().getLastKnownLocation()
                         if (location != null) {
                             variableStore.setTimeInLocation(location.first, location.second)
                         }
@@ -380,7 +380,7 @@ class TaskRunner @Inject constructor(
                         ))
 
                         // Disable geofences for today
-                        triggerManager.disableGeofences()
+                        triggerManagerProvider.get().disableGeofences()
                         return@launch
                     }
                 }
