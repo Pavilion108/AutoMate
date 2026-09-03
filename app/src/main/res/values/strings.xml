@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AutoMate</string>
+    <string name="accessibility_service_description">AutoMate uses this service to automate tasks in other apps, such as checking in at work, sending messages, and booking tickets. The service reads screen content to find buttons and fields, then performs taps and text input on your behalf.</string>
+</resources>
