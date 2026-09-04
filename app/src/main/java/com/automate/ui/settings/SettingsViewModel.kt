@@ -18,10 +18,10 @@ import java.util.Calendar
 import javax.inject.Inject
 
 data class SettingsUiState(
-    val workHours: Int = 8,
+    val workHours: Float = 8.5f,
     val morningPromptEnabled: Boolean = true,
     val geofenceRadius: Float = 200f,
-    val exitWatchDistance: Float = 150f
+    val exitWatchDistance: Float = 50f
 )
 
 @HiltViewModel
@@ -40,10 +40,10 @@ class SettingsViewModel @Inject constructor(
     private fun loadSettings() {
         viewModelScope.launch {
             val prefs = context.getSharedPreferences("automate_prefs", Context.MODE_PRIVATE)
-            val workHours = prefs.getInt("work_hours", 8)
+            val workHours = prefs.getFloat("work_hours", 8.5f)
             val morningPrompt = prefs.getBoolean("morning_prompt_enabled", true)
             val geofenceRadius = prefs.getFloat("geofence_radius", 200f)
-            val exitWatchDistance = prefs.getFloat("exit_watch_distance", 150f)
+            val exitWatchDistance = prefs.getFloat("exit_watch_distance", 50f)
 
             _uiState.value = SettingsUiState(
                 workHours = workHours,
@@ -52,10 +52,39 @@ class SettingsViewModel @Inject constructor(
                 exitWatchDistance = exitWatchDistance
             )
 
-            // Schedule morning prompt if enabled
+            // Sync work hours to VariableStore
+            variableStore.setVariable("work_duration_hours", workHours.toInt().toString(), "INTEGER")
+
             if (morningPrompt) {
                 scheduleMorningPrompt()
             }
+        }
+    }
+
+    fun setWorkHours(hours: Float) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(workHours = hours)
+            val prefs = context.getSharedPreferences("automate_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putFloat("work_hours", hours).apply()
+            variableStore.setVariable("work_duration_hours", hours.toInt().toString(), "INTEGER")
+        }
+    }
+
+    fun setGeofenceRadius(radius: Float) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(geofenceRadius = radius)
+            val prefs = context.getSharedPreferences("automate_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putFloat("geofence_radius", radius).apply()
+            variableStore.setVariable("geofence_radius", radius.toInt().toString(), "INTEGER")
+        }
+    }
+
+    fun setExitWatchDistance(distance: Float) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(exitWatchDistance = distance)
+            val prefs = context.getSharedPreferences("automate_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putFloat("exit_watch_distance", distance).apply()
+            variableStore.setVariable("exit_watch_distance", distance.toInt().toString(), "INTEGER")
         }
     }
 

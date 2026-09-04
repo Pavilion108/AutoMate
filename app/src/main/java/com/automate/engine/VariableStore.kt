@@ -69,11 +69,11 @@ class VariableStore @Inject constructor(
     suspend fun isGoingToWork(): Boolean = getBooleanVariable("going_to_work")
     suspend fun setGoingToWork(value: Boolean) = setBooleanVariable("going_to_work", value)
 
-    suspend fun getWorkDurationHours(): Int {
-        return getVariable("work_duration_hours")?.toIntOrNull() ?: 8
+    suspend fun getWorkDurationHours(): Float {
+        return getVariable("work_duration_hours")?.toFloatOrNull() ?: 8.5f
     }
 
-    suspend fun setWorkDurationHours(hours: Int) {
+    suspend fun setWorkDurationHours(hours: Float) {
         setVariable("work_duration_hours", hours.toString(), "INTEGER")
     }
 

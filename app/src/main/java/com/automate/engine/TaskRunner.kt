@@ -358,11 +358,11 @@ class TaskRunner @Inject constructor(
 
     // === Smart Time-Out Flow ===
 
-    private fun scheduleTimeOutPrompt(workHours: Int) {
+    private fun scheduleTimeOutPrompt(workHours: Float) {
         timeOutJob?.cancel()
         timeOutJob = scope.launch {
             // Wait for work hours to complete
-            delay(workHours * 60 * 60 * 1000L)
+            delay((workHours * 60 * 60 * 1000).toLong())
 
             Log.i(TAG, "Work hours complete, prompting for time-out")
             sendTimeOutPrompt()
