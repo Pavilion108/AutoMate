@@ -119,7 +119,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                         variableStore.setVariable("time_in_lat", "19.126812", "STRING")
                         variableStore.setVariable("time_in_lng", "72.838510", "STRING")
                         Log.i(TAG, "Set time_in location")
-                        variableStore.setWorkDurationHours(8)
+                        variableStore.setWorkDurationHours(8.5f)
                         Log.i(TAG, "Set work_duration_hours=8")
                         triggerManager.enableGeofences()
                         Log.i(TAG, "Geofences enabled")

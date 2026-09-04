@@ -86,7 +86,7 @@ class TaskEditorViewModel @Inject constructor(
             }
 
             // Save work hours
-            variableStore.setWorkDurationHours(workHours)
+            variableStore.setWorkDurationHours(workHours.toFloat())
 
             _uiState.value = _uiState.value.copy(isSaving = false)
         }

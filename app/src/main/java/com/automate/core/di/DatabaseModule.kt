@@ -58,7 +58,7 @@ object DatabaseModule {
                         put("value", value)
                         put("type", type)
                     }
-                    db.insert("variables", androidx.sqlite.db.ConflictStrategy.REPLACE, cv)
+                    db.insert("variables", android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE, cv)
                 }
 
                 // Seed Beehive Time-In task
@@ -91,7 +91,7 @@ object DatabaseModule {
                     put("actionsJson", timeInActions)
                     put("createdAt", System.currentTimeMillis())
                 }
-                db.insert("tasks", androidx.sqlite.db.ConflictStrategy.REPLACE, timeInCv)
+                db.insert("tasks", android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE, timeInCv)
 
                 // Seed Beehive Time-Out task
                 val timeOutTrigger = gson.toJson(mapOf(
@@ -121,7 +121,7 @@ object DatabaseModule {
                     put("actionsJson", timeOutActions)
                     put("createdAt", System.currentTimeMillis())
                 }
-                db.insert("tasks", androidx.sqlite.db.ConflictStrategy.REPLACE, timeOutCv)
+                db.insert("tasks", android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE, timeOutCv)
             }
         }).build()
     }
