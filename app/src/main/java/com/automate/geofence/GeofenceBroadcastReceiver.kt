@@ -92,6 +92,33 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 Log.i(TAG, "Test mode: sending time-out prompt")
                 taskRunner.sendTimeOutPrompt()
             }
+
+            // Generic set variable
+            "SET_VARIABLE" -> {
+                val name = intent.getStringExtra("variable_name") ?: return
+                val value = intent.getStringExtra("variable_value") ?: return
+                scope.launch {
+                    variableStore.setVariable(name, value)
+                    Log.i(TAG, "Variable set via broadcast: $name = $value")
+                }
+            }
+
+            // Quick test setup: set all variables for time-out testing
+            "TEST_SETUP_TIMEOUT" -> {
+                Log.i(TAG, "Test setup: configuring for time-out testing")
+                scope.launch {
+                    variableStore.setArmed(true)
+                    variableStore.setTimedInToday(true)
+                    variableStore.setGoingToWork(true)
+                    variableStore.setExitWatch(true)
+                    variableStore.setVariable("time_in_lat", "19.126812", "STRING")
+                    variableStore.setVariable("time_in_lng", "72.838510", "STRING")
+                    variableStore.setWorkDurationHours(8)
+                    triggerManager.enableGeofences()
+                    triggerManager.startLocationTracking()
+                    Log.i(TAG, "Test setup complete: armed=true, timed_in=true, exit_watch=true")
+                }
+            }
         }
     }
 
