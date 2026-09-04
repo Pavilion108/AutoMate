@@ -124,68 +124,83 @@ class TaskRunner @Inject constructor(
                 attempts++
                 Log.i(TAG, "Time-in attempt $attempts/$maxAttempts")
 
-                // Step 1: Launch Beehive HRMS
-                actionExecutor.executeAction(Action(
-                    type = ActionType.LAUNCH_APP,
-                    packageName = beehivePackage
-                ))
-                delay(5000) // Wait longer for app to fully load
-
-                // Verify Beehive is in foreground
-                val foregroundApp = getForegroundApp()
-                Log.i(TAG, "Foreground app: $foregroundApp")
-                if (foregroundApp != beehivePackage) {
-                    Log.w(TAG, "Beehive not in foreground, retrying...")
-                    actionExecutor.executeAction(Action(
-                        type = ActionType.LAUNCH_APP,
-                        packageName = beehivePackage
-                    ))
-                    delay(3000)
+                // Step 0: Dismiss any blocking dialogs (uninstall confirm, etc)
+                val screenText0 = service.getScreenText()
+                if (screenText0.contains("Uninstall", ignoreCase = true) ||
+                    screenText0.contains("Cancel", ignoreCase = true) ||
+                    screenText0.contains("force stop", ignoreCase = true)) {
+                    Log.i(TAG, "Dismissing blocking dialog...")
+                    service.performGlobalBack()
+                    delay(1000)
+                    service.performGlobalBack()
+                    delay(1000)
+                    service.performGlobalHome()
+                    delay(1000)
                 }
+
+                // Step 1: Kill Beehive and relaunch fresh
+                if (attempts <= 2) {
+                    Runtime.getRuntime().exec(arrayOf("am", "force-stop", beehivePackage)).waitFor()
+                    delay(1000)
+                }
+
+                // Step 2: Launch Beehive via shell
+                try {
+                    Runtime.getRuntime().exec(arrayOf(
+                        "am", "start", "-n", "$beehivePackage/com.tns.NativeScriptActivity"
+                    )).waitFor()
+                    Log.i(TAG, "Launched Beehive")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to launch Beehive", e)
+                }
+                delay(8000) // Wait for NativeScript app to fully load
 
                 // Log what's on screen
                 var screenText = service.getScreenText()
                 Log.i(TAG, "Screen text (first 500 chars): ${screenText.take(500)}")
 
-                // Step 2: Navigate to attendance page via ME tab (only in Beehive)
-                val meNode = service.findNodeByTextInApp("ME", beehivePackage)
-                if (meNode != null) {
-                    Log.i(TAG, "Found ME tab in Beehive, clicking...")
-                    service.performClick(meNode)
+                // Check if Beehive content is visible (look for beehive-specific strings)
+                val isBeehiveVisible = screenText.contains("SIGN IN", ignoreCase = true) ||
+                        screenText.contains("E0099", ignoreCase = true) ||
+                        screenText.contains("Remember Me", ignoreCase = true) ||
+                        screenText.contains("TIME IN", ignoreCase = true) ||
+                        screenText.contains("HOME", ignoreCase = true) ||
+                        screenText.contains("MY TEAM", ignoreCase = true)
+
+                if (!isBeehiveVisible) {
+                    Log.w(TAG, "Beehive not visible on screen, retrying...")
                     delay(3000)
-                    screenText = service.getScreenText()
-                    Log.i(TAG, "After ME click, screen text: ${screenText.take(500)}")
-                } else {
-                    Log.w(TAG, "ME tab not found in Beehive app")
+                    continue
                 }
+
+                Log.i(TAG, "Beehive content detected on screen")
 
                 // Step 3: On login screen — click SIGN IN (credentials pre-filled)
                 val signInNode = service.findNodeByTextInApp("SIGN IN", beehivePackage)
+                    ?: service.findNodeByText("SIGN IN") // Fallback: search all windows
                 if (signInNode != null) {
                     Log.i(TAG, "Found SIGN IN in Beehive, clicking...")
                     service.performClick(signInNode)
-                    delay(3000) // Wait for login + page transition
+                    delay(5000) // Wait for login + page transition
 
                     // Check if page changed
                     var afterLoginText = service.getScreenText()
                     Log.i(TAG, "After SIGN IN click, screen: ${afterLoginText.take(300)}")
 
-                    // If still on login, try clicking parent or coordinates
+                    // If still on login, try coordinates click
                     if (afterLoginText.contains("SIGN IN") && afterLoginText.contains("Remember Me")) {
-                        Log.w(TAG, "Still on login page. Trying coordinates click on SIGN IN...")
-                        // Find the SIGN IN text bounds and click center
+                        Log.w(TAG, "Still on login page. Trying coordinates click...")
                         val bounds = android.graphics.Rect()
                         signInNode.getBoundsInScreen(bounds)
-                        val centerX = bounds.centerX()
-                        val centerY = bounds.centerY()
-                        service.tapAtCoordinates(centerX, centerY)
-                        delay(5000) // Wait longer after coordinate click
+                        service.tapAtCoordinates(bounds.centerX(), bounds.centerY())
+                        delay(5000)
                         afterLoginText = service.getScreenText()
                         Log.i(TAG, "After coord click, screen: ${afterLoginText.take(300)}")
                     }
 
-                    // Now look for TIME IN on the new page
+                    // Now look for TIME IN
                     val timeInNode = service.findNodeByTextInApp("TIME IN", beehivePackage)
+                        ?: service.findNodeByText("TIME IN")
                     if (timeInNode != null) {
                         Log.i(TAG, "Found TIME IN in Beehive, clicking...")
                         service.performClick(timeInNode)
@@ -209,17 +224,45 @@ class TaskRunner @Inject constructor(
                             return@launch
                         }
                     } else {
-                        Log.w(TAG, "TIME IN not found after login")
-                        // Look for other navigation like "Attendance" or "Mark Attendance"
-                        val attendanceNode = service.findNodeByTextInApp("Attendance", beehivePackage)
-                            ?: service.findNodeByTextInApp("Mark Attendance", beehivePackage)
-                            ?: service.findNodeByTextInApp("Check In", beehivePackage)
-                        if (attendanceNode != null) {
-                            Log.i(TAG, "Found attendance nav: ${attendanceNode.text}, clicking...")
-                            service.performClick(attendanceNode)
-                            delay(3000)
-                            val afterNavText = service.getScreenText()
-                            Log.i(TAG, "After nav click, screen: ${afterNavText.take(300)}")
+                        Log.w(TAG, "TIME IN not found after login. Looking for navigation...")
+                        // Look for other nav elements
+                        val navTexts = listOf("Attendance", "Mark Attendance", "Check In", "Dashboard", "HOME")
+                        for (navText in navTexts) {
+                            val navNode = service.findNodeByTextInApp(navText, beehivePackage)
+                                ?: service.findNodeByText(navText)
+                            if (navNode != null) {
+                                Log.i(TAG, "Found nav: $navText, clicking...")
+                                service.performClick(navNode)
+                                delay(3000)
+                                afterLoginText = service.getScreenText()
+                                Log.i(TAG, "After nav click, screen: ${afterLoginText.take(300)}")
+                                // Check for TIME IN now
+                                val timeInNow = service.findNodeByTextInApp("TIME IN", beehivePackage)
+                                    ?: service.findNodeByText("TIME IN")
+                                if (timeInNow != null) {
+                                    Log.i(TAG, "Found TIME IN after navigation!")
+                                    service.performClick(timeInNow)
+                                    delay(2000)
+                                    val success = handleTimeInPopups()
+                                    if (success) {
+                                        Log.i(TAG, "Time-in successful after navigation!")
+                                        variableStore.setTimedInToday(true)
+                                        val location = triggerManagerProvider.get().getLastKnownLocation()
+                                        if (location != null) {
+                                            variableStore.setTimeInLocation(location.first, location.second)
+                                        }
+                                        val workHours = variableStore.getWorkDurationHours()
+                                        scheduleTimeOutPrompt(workHours)
+                                        showStatusNotification("Time-In Recorded", "Work hours started. Duration: ${workHours}h")
+                                        actionExecutor.executeAction(Action(
+                                            type = ActionType.GLOBAL_ACTION,
+                                            globalActionType = "home"
+                                        ))
+                                        return@launch
+                                    }
+                                }
+                                break
+                            }
                         }
                     }
                 } else {
