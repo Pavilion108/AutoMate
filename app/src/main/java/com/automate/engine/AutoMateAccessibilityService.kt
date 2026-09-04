@@ -39,6 +39,7 @@ class AutoMateAccessibilityService : AccessibilityService() {
         }
 
         instance = this
+        KeepAliveService.start(this)
         Log.i(TAG, "AutoMate Accessibility Service connected")
     }
 
@@ -55,8 +56,16 @@ class AutoMateAccessibilityService : AccessibilityService() {
         isRunning = false
         instance = null
         scope.cancel()
-        Log.i(TAG, "AutoMate Accessibility Service unbound")
-        return super.onUnbind(intent)
+        Log.w(TAG, "AutoMate Accessibility Service unbound! Requesting rebind...")
+        KeepAliveService.rebindAccessibility(this)
+        return true // Return true to receive onRebind
+    }
+
+    override fun onRebind(intent: Intent?) {
+        super.onRebind(intent)
+        isRunning = true
+        instance = this
+        Log.i(TAG, "AutoMate Accessibility Service rebound")
     }
 
     fun addEventListener(listener: EventListener) {

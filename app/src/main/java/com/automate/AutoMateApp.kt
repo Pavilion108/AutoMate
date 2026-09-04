@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import com.automate.engine.KeepAliveService
 import dagger.hilt.android.HiltAndroidApp
 
 @HiltAndroidApp
@@ -13,6 +14,7 @@ class AutoMateApp : Application() {
         super.onCreate()
         createNotificationChannels()
         initDefaultPrefs()
+        KeepAliveService.start(this)
     }
 
     private fun initDefaultPrefs() {
@@ -57,12 +59,22 @@ class AutoMateApp : Application() {
             enableVibration(true)
         }
 
-        manager.createNotificationChannels(listOf(morningPrompt, taskStatus, locationAlert))
+        val keepAlive = NotificationChannel(
+            CHANNEL_KEEP_ALIVE,
+            "Keep Alive",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Keeps AutoMate running in background"
+            setShowBadge(false)
+        }
+
+        manager.createNotificationChannels(listOf(morningPrompt, taskStatus, locationAlert, keepAlive))
     }
 
     companion object {
         const val CHANNEL_MORNING_PROMPT = "morning_prompt"
         const val CHANNEL_TASK_STATUS = "task_status"
         const val CHANNEL_LOCATION_ALERT = "location_alert"
+        const val CHANNEL_KEEP_ALIVE = "keep_alive"
     }
 }

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.automate.data.db.dao.GeofenceLocationDao
+import com.automate.engine.KeepAliveService
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +25,8 @@ class GeofenceBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED ||
             intent.action == "android.intent.action.QUICKBOOT_POWERON") {
-            Log.i(TAG, "Device booted, re-registering geofences")
+            Log.i(TAG, "Device booted, starting services")
+            KeepAliveService.start(context)
             scope.launch {
                 geofenceRegistrar.reRegisterAllGeofences()
             }

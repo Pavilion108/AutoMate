@@ -108,11 +108,14 @@ class ActionExecutor @Inject constructor(
             }
 
             // Strategy 3: Use shell am start via Runtime
-            val process = Runtime.getRuntime().exec(arrayOf("am", "start", "-n", "$packageName/$(knownActivities[packageName] ?: "")"))
-            val exitCode = process.waitFor()
-            if (exitCode == 0) {
-                Log.i(TAG, "Launched app via shell: $packageName")
-                return true
+            val activityName = knownActivities[packageName] ?: ""
+            if (activityName.isNotEmpty()) {
+                val process = Runtime.getRuntime().exec(arrayOf("am", "start", "-n", "$packageName/$activityName"))
+                val exitCode = process.waitFor()
+                if (exitCode == 0) {
+                    Log.i(TAG, "Launched app via shell: $packageName")
+                    return true
+                }
             }
 
             Log.w(TAG, "App not found: $packageName")

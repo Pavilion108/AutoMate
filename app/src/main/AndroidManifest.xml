@@ -67,6 +67,12 @@
             </intent-filter>
         </receiver>
 
+        <!-- Keep Alive Foreground Service - prevents MIUI from killing process -->
+        <service
+            android:name=".engine.KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
+
         <!-- Boot Receiver - re-register geofences after reboot -->
         <receiver
             android:name=".geofence.GeofenceBootReceiver"
