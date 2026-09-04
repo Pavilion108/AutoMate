@@ -12,6 +12,20 @@ class AutoMateApp : Application() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannels()
+        initDefaultPrefs()
+    }
+
+    private fun initDefaultPrefs() {
+        val prefs = getSharedPreferences("automate_prefs", MODE_PRIVATE)
+        if (!prefs.contains("initialized")) {
+            prefs.edit()
+                .putInt("work_hours", 9)
+                .putBoolean("morning_prompt_enabled", true)
+                .putFloat("geofence_radius", 200f)
+                .putFloat("exit_watch_distance", 150f)
+                .putBoolean("initialized", true)
+                .apply()
+        }
     }
 
     private fun createNotificationChannels() {
