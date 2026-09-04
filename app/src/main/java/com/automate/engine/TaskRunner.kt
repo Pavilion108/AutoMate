@@ -159,50 +159,71 @@ class TaskRunner @Inject constructor(
                     Log.w(TAG, "ME tab not found in Beehive app")
                 }
 
-                // Step 3: Try to click SIGN IN (only in Beehive)
+                // Step 3: On login screen — click SIGN IN (credentials pre-filled)
                 val signInNode = service.findNodeByTextInApp("SIGN IN", beehivePackage)
                 if (signInNode != null) {
                     Log.i(TAG, "Found SIGN IN in Beehive, clicking...")
                     service.performClick(signInNode)
-                    delay(2000)
-                } else {
-                    Log.w(TAG, "SIGN IN not found in Beehive")
-                }
+                    delay(3000) // Wait for login + page transition
 
-                // Step 4: Try to click TIME IN (only in Beehive)
-                val timeInNode = service.findNodeByTextInApp("TIME IN", beehivePackage)
-                if (timeInNode != null) {
-                    Log.i(TAG, "Found TIME IN in Beehive, clicking...")
-                    service.performClick(timeInNode)
-                    delay(2000)
+                    // Check if page changed
+                    var afterLoginText = service.getScreenText()
+                    Log.i(TAG, "After SIGN IN click, screen: ${afterLoginText.take(300)}")
 
-                    // Step 5: Handle any popups and wait for success
-                    val success = handleTimeInPopups()
-                    if (success) {
-                        Log.i(TAG, "Time-in successful!")
-                        variableStore.setTimedInToday(true)
+                    // If still on login, try clicking parent or coordinates
+                    if (afterLoginText.contains("SIGN IN") && afterLoginText.contains("Remember Me")) {
+                        Log.w(TAG, "Still on login page. Trying coordinates click on SIGN IN...")
+                        // Find the SIGN IN text bounds and click center
+                        val bounds = android.graphics.Rect()
+                        signInNode.getBoundsInScreen(bounds)
+                        val centerX = bounds.centerX()
+                        val centerY = bounds.centerY()
+                        service.tapAtCoordinates(centerX, centerY)
+                        delay(5000) // Wait longer after coordinate click
+                        afterLoginText = service.getScreenText()
+                        Log.i(TAG, "After coord click, screen: ${afterLoginText.take(300)}")
+                    }
 
-                        // Record time-in location
-                        val location = triggerManagerProvider.get().getLastKnownLocation()
-                        if (location != null) {
-                            variableStore.setTimeInLocation(location.first, location.second)
+                    // Now look for TIME IN on the new page
+                    val timeInNode = service.findNodeByTextInApp("TIME IN", beehivePackage)
+                    if (timeInNode != null) {
+                        Log.i(TAG, "Found TIME IN in Beehive, clicking...")
+                        service.performClick(timeInNode)
+                        delay(2000)
+
+                        val success = handleTimeInPopups()
+                        if (success) {
+                            Log.i(TAG, "Time-in successful!")
+                            variableStore.setTimedInToday(true)
+                            val location = triggerManagerProvider.get().getLastKnownLocation()
+                            if (location != null) {
+                                variableStore.setTimeInLocation(location.first, location.second)
+                            }
+                            val workHours = variableStore.getWorkDurationHours()
+                            scheduleTimeOutPrompt(workHours)
+                            showStatusNotification("Time-In Recorded", "Work hours started. Duration: ${workHours}h")
+                            actionExecutor.executeAction(Action(
+                                type = ActionType.GLOBAL_ACTION,
+                                globalActionType = "home"
+                            ))
+                            return@launch
                         }
-
-                        // Get work duration and schedule time-out prompt
-                        val workHours = variableStore.getWorkDurationHours()
-                        scheduleTimeOutPrompt(workHours)
-
-                        showStatusNotification("Time-In Recorded", "Work hours started. Duration: ${workHours}h")
-
-                        // Close the app
-                        actionExecutor.executeAction(Action(
-                            type = ActionType.GLOBAL_ACTION,
-                            globalActionType = "home"
-                        ))
-                        return@launch
+                    } else {
+                        Log.w(TAG, "TIME IN not found after login")
+                        // Look for other navigation like "Attendance" or "Mark Attendance"
+                        val attendanceNode = service.findNodeByTextInApp("Attendance", beehivePackage)
+                            ?: service.findNodeByTextInApp("Mark Attendance", beehivePackage)
+                            ?: service.findNodeByTextInApp("Check In", beehivePackage)
+                        if (attendanceNode != null) {
+                            Log.i(TAG, "Found attendance nav: ${attendanceNode.text}, clicking...")
+                            service.performClick(attendanceNode)
+                            delay(3000)
+                            val afterNavText = service.getScreenText()
+                            Log.i(TAG, "After nav click, screen: ${afterNavText.take(300)}")
+                        }
                     }
                 } else {
-                    Log.w(TAG, "TIME IN not found in Beehive")
+                    Log.w(TAG, "SIGN IN not found in Beehive")
                 }
 
                 // If we get here, something went wrong - refresh location and retry
