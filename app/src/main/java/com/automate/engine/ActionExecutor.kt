@@ -83,16 +83,40 @@ class ActionExecutor @Inject constructor(
 
     private fun launchApp(packageName: String): Boolean {
         return try {
-            val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+            // Strategy 1: Try standard launch intent
+            var intent = context.packageManager.getLaunchIntentForPackage(packageName)
             if (intent != null) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 context.startActivity(intent)
-                Log.i(TAG, "Launched app: $packageName")
-                true
-            } else {
-                Log.w(TAG, "App not found: $packageName")
-                false
+                Log.i(TAG, "Launched app via intent: $packageName")
+                return true
             }
+
+            // Strategy 2: MIUI fallback — use known activity components
+            val knownActivities = mapOf(
+                "com.app.beehivehrms" to "com.tns.NativeScriptActivity"
+            )
+            val activityClass = knownActivities[packageName]
+            if (activityClass != null) {
+                intent = Intent().apply {
+                    setClassName(packageName, activityClass)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                }
+                context.startActivity(intent)
+                Log.i(TAG, "Launched app via fallback activity: $packageName/$activityClass")
+                return true
+            }
+
+            // Strategy 3: Use shell am start via Runtime
+            val process = Runtime.getRuntime().exec(arrayOf("am", "start", "-n", "$packageName/$(knownActivities[packageName] ?: "")"))
+            val exitCode = process.waitFor()
+            if (exitCode == 0) {
+                Log.i(TAG, "Launched app via shell: $packageName")
+                return true
+            }
+
+            Log.w(TAG, "App not found: $packageName")
+            false
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch app: $packageName", e)
             false

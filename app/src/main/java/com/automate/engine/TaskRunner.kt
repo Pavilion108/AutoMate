@@ -127,18 +127,26 @@ class TaskRunner @Inject constructor(
                     type = ActionType.LAUNCH_APP,
                     packageName = "com.app.beehivehrms"
                 ))
-                delay(3000) // Wait for app to load
+                delay(5000) // Wait longer for app to fully load
+
+                // Log what's on screen
+                val screenText = service.getScreenText()
+                Log.i(TAG, "Screen text (first 500 chars): ${screenText.take(500)}")
 
                 // Step 2: Try to click SIGN IN or TIME IN
                 val signInNode = service.findNodeByText("SIGN IN")
                 if (signInNode != null) {
+                    Log.i(TAG, "Found SIGN IN, clicking...")
                     service.performClick(signInNode)
                     delay(2000)
+                } else {
+                    Log.w(TAG, "SIGN IN not found on screen")
                 }
 
                 // Step 3: Try to click TIME IN
                 val timeInNode = service.findNodeByText("TIME IN")
                 if (timeInNode != null) {
+                    Log.i(TAG, "Found TIME IN, clicking...")
                     service.performClick(timeInNode)
                     delay(2000)
 
@@ -167,6 +175,8 @@ class TaskRunner @Inject constructor(
                         ))
                         return@launch
                     }
+                } else {
+                    Log.w(TAG, "TIME IN not found on screen")
                 }
 
                 // If we get here, something went wrong - refresh location and retry
