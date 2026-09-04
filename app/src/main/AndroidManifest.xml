@@ -64,16 +64,5 @@
             </intent-filter>
         </receiver>
 
-        <!-- WorkManager initializer - provided by startup-runtime library via manifest merger -->
-        <provider
-            android:name="androidx.start.InitializationProvider"
-            android:authorities="${applicationId}.androidx-start"
-            android:exported="false"
-            tools:node="merge">
-            <meta-data
-                android:name="androidx.work.WorkManagerInitializer"
-                android:value="androidx.start" />
-        </provider>
-
     </application>
 </manifest>
