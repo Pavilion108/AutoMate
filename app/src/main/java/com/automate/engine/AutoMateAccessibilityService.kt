@@ -76,10 +76,19 @@ class AutoMateAccessibilityService : AccessibilityService() {
         eventListeners.remove(listener)
     }
 
-    // === UI Element Finding ===
+    // === UI Element Finding (scoped to package) ===
 
-    fun findNodeByText(text: String, exact: Boolean = false): AccessibilityNodeInfo? {
+    fun findNodeByText(text: String, exact: Boolean = false, packageName: String? = null): AccessibilityNodeInfo? {
         val root = rootInActiveWindow ?: return null
+        if (packageName != null && root.packageName?.toString() != packageName) {
+            return null
+        }
+        return findNodeByTextRecursive(root, text, exact)
+    }
+
+    fun findNodeByTextInApp(text: String, packageName: String, exact: Boolean = false): AccessibilityNodeInfo? {
+        val root = rootInActiveWindow ?: return null
+        if (root.packageName?.toString() != packageName) return null
         return findNodeByTextRecursive(root, text, exact)
     }
 

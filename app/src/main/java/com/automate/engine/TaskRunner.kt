@@ -118,6 +118,8 @@ class TaskRunner @Inject constructor(
             var attempts = 0
             val maxAttempts = 60 // Try for 5 minutes (60 * 5 seconds)
 
+            val beehivePackage = "com.app.beehivehrms"
+
             while (attempts < maxAttempts && isActive) {
                 attempts++
                 Log.i(TAG, "Time-in attempt $attempts/$maxAttempts")
@@ -125,38 +127,52 @@ class TaskRunner @Inject constructor(
                 // Step 1: Launch Beehive HRMS
                 actionExecutor.executeAction(Action(
                     type = ActionType.LAUNCH_APP,
-                    packageName = "com.app.beehivehrms"
+                    packageName = beehivePackage
                 ))
                 delay(5000) // Wait longer for app to fully load
+
+                // Verify Beehive is in foreground
+                val foregroundApp = getForegroundApp()
+                Log.i(TAG, "Foreground app: $foregroundApp")
+                if (foregroundApp != beehivePackage) {
+                    Log.w(TAG, "Beehive not in foreground, retrying...")
+                    actionExecutor.executeAction(Action(
+                        type = ActionType.LAUNCH_APP,
+                        packageName = beehivePackage
+                    ))
+                    delay(3000)
+                }
 
                 // Log what's on screen
                 var screenText = service.getScreenText()
                 Log.i(TAG, "Screen text (first 500 chars): ${screenText.take(500)}")
 
-                // Step 2: Navigate to attendance page via ME tab
-                val meNode = service.findNodeByText("ME")
+                // Step 2: Navigate to attendance page via ME tab (only in Beehive)
+                val meNode = service.findNodeByTextInApp("ME", beehivePackage)
                 if (meNode != null) {
-                    Log.i(TAG, "Found ME tab, clicking to navigate to attendance...")
+                    Log.i(TAG, "Found ME tab in Beehive, clicking...")
                     service.performClick(meNode)
                     delay(3000)
                     screenText = service.getScreenText()
                     Log.i(TAG, "After ME click, screen text: ${screenText.take(500)}")
+                } else {
+                    Log.w(TAG, "ME tab not found in Beehive app")
                 }
 
-                // Step 3: Try to click SIGN IN or TIME IN
-                val signInNode = service.findNodeByText("SIGN IN")
+                // Step 3: Try to click SIGN IN (only in Beehive)
+                val signInNode = service.findNodeByTextInApp("SIGN IN", beehivePackage)
                 if (signInNode != null) {
-                    Log.i(TAG, "Found SIGN IN, clicking...")
+                    Log.i(TAG, "Found SIGN IN in Beehive, clicking...")
                     service.performClick(signInNode)
                     delay(2000)
                 } else {
-                    Log.w(TAG, "SIGN IN not found on screen")
+                    Log.w(TAG, "SIGN IN not found in Beehive")
                 }
 
-                // Step 4: Try to click TIME IN
-                val timeInNode = service.findNodeByText("TIME IN")
+                // Step 4: Try to click TIME IN (only in Beehive)
+                val timeInNode = service.findNodeByTextInApp("TIME IN", beehivePackage)
                 if (timeInNode != null) {
-                    Log.i(TAG, "Found TIME IN, clicking...")
+                    Log.i(TAG, "Found TIME IN in Beehive, clicking...")
                     service.performClick(timeInNode)
                     delay(2000)
 
@@ -186,7 +202,7 @@ class TaskRunner @Inject constructor(
                         return@launch
                     }
                 } else {
-                    Log.w(TAG, "TIME IN not found on screen")
+                    Log.w(TAG, "TIME IN not found in Beehive")
                 }
 
                 // If we get here, something went wrong - refresh location and retry
@@ -510,6 +526,18 @@ class TaskRunner @Inject constructor(
         timeInJob?.cancel()
         timeOutJob?.cancel()
         popupHandlerJob?.cancel()
+    }
+
+    private fun getForegroundApp(): String? {
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("dumpsys", "activity", "activities"))
+            val result = process.inputStream.bufferedReader().readText()
+            process.waitFor()
+            val match = Regex("mResumedActivity=.*?u0 (\\S+?)\\b").find(result)
+            match?.groupValues?.get(1)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     companion object {
