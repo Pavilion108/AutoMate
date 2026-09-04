@@ -88,6 +88,9 @@ dependencies {
     implementation("androidx.hilt:hilt-work:1.2.0")
     ksp("androidx.hilt:hilt-compiler:1.2.0")
 
+    // Startup (required by WorkManager for InitializationProvider)
+    implementation("androidx.startup:startup-runtime:1.1.1")
+
     // JSON
     implementation("com.google.code.gson:gson:2.11.0")
 
