@@ -158,8 +158,8 @@ class TriggerManager @Inject constructor(
         val distance = currentLocation.distanceTo(timeInLoc)
         Log.d(TAG, "Distance from time-in location: ${distance}m")
 
-        // If user is more than 150m away, trigger time-out
-        if (distance > 150f) {
+        // If user is more than 50m away, trigger time-out
+        if (distance > 50f) {
             Log.i(TAG, "User left office area (${distance}m away), triggering time-out")
             taskRunner.performTimeOut()
         }

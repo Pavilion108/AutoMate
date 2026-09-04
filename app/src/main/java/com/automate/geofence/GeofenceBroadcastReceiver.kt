@@ -107,16 +107,28 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             "TEST_SETUP_TIMEOUT" -> {
                 Log.i(TAG, "Test setup: configuring for time-out testing")
                 scope.launch {
-                    variableStore.setArmed(true)
-                    variableStore.setTimedInToday(true)
-                    variableStore.setGoingToWork(true)
-                    variableStore.setExitWatch(true)
-                    variableStore.setVariable("time_in_lat", "19.126812", "STRING")
-                    variableStore.setVariable("time_in_lng", "72.838510", "STRING")
-                    variableStore.setWorkDurationHours(8)
-                    triggerManager.enableGeofences()
-                    triggerManager.startLocationTracking()
-                    Log.i(TAG, "Test setup complete: armed=true, timed_in=true, exit_watch=true")
+                    try {
+                        variableStore.setArmed(true)
+                        Log.i(TAG, "Set armed=true")
+                        variableStore.setTimedInToday(true)
+                        Log.i(TAG, "Set timed_in_today=true")
+                        variableStore.setGoingToWork(true)
+                        Log.i(TAG, "Set going_to_work=true")
+                        variableStore.setExitWatch(true)
+                        Log.i(TAG, "Set exit_watch=true")
+                        variableStore.setVariable("time_in_lat", "19.126812", "STRING")
+                        variableStore.setVariable("time_in_lng", "72.838510", "STRING")
+                        Log.i(TAG, "Set time_in location")
+                        variableStore.setWorkDurationHours(8)
+                        Log.i(TAG, "Set work_duration_hours=8")
+                        triggerManager.enableGeofences()
+                        Log.i(TAG, "Geofences enabled")
+                        triggerManager.startLocationTracking()
+                        Log.i(TAG, "Location tracking started")
+                        Log.i(TAG, "Test setup complete")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Test setup failed", e)
+                    }
                 }
             }
         }
