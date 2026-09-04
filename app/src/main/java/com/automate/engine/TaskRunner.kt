@@ -120,31 +120,29 @@ class TaskRunner @Inject constructor(
 
             val beehivePackage = "com.app.beehivehrms"
 
+            // Go home FIRST so AutoMate is not in foreground
+            Log.i(TAG, "Going home to clear screen...")
+            service.performGlobalHome()
+            delay(2000)
+
             while (attempts < maxAttempts && isActive) {
                 attempts++
                 Log.i(TAG, "Time-in attempt $attempts/$maxAttempts")
 
-                // Step 0: Dismiss any blocking dialogs (uninstall confirm, etc)
+                // Dismiss any blocking dialogs
                 val screenText0 = service.getScreenText()
                 if (screenText0.contains("Uninstall", ignoreCase = true) ||
-                    screenText0.contains("Cancel", ignoreCase = true) ||
                     screenText0.contains("force stop", ignoreCase = true)) {
                     Log.i(TAG, "Dismissing blocking dialog...")
                     service.performGlobalBack()
                     delay(1000)
-                    service.performGlobalBack()
-                    delay(1000)
-                    service.performGlobalHome()
-                    delay(1000)
                 }
 
-                // Step 1: Kill Beehive and relaunch fresh
-                if (attempts <= 2) {
-                    Runtime.getRuntime().exec(arrayOf("am", "force-stop", beehivePackage)).waitFor()
-                    delay(1000)
-                }
+                // Kill Beehive and relaunch fresh
+                Runtime.getRuntime().exec(arrayOf("am", "force-stop", beehivePackage)).waitFor()
+                delay(1000)
 
-                // Step 2: Launch Beehive via shell
+                // Launch Beehive via shell
                 try {
                     Runtime.getRuntime().exec(arrayOf(
                         "am", "start", "-n", "$beehivePackage/com.tns.NativeScriptActivity"
@@ -153,19 +151,17 @@ class TaskRunner @Inject constructor(
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to launch Beehive", e)
                 }
-                delay(8000) // Wait for NativeScript app to fully load
+                delay(8000)
 
                 // Log what's on screen
                 var screenText = service.getScreenText()
-                Log.i(TAG, "Screen text (first 500 chars): ${screenText.take(500)}")
+                Log.i(TAG, "Screen text: ${screenText.take(500)}")
 
-                // Check if Beehive content is visible (look for beehive-specific strings)
-                val isBeehiveVisible = screenText.contains("SIGN IN", ignoreCase = true) ||
-                        screenText.contains("E0099", ignoreCase = true) ||
+                // Check if Beehive login content is visible (NOT AutoMate dashboard)
+                val isBeehiveVisible = screenText.contains("E0099", ignoreCase = true) ||
                         screenText.contains("Remember Me", ignoreCase = true) ||
-                        screenText.contains("TIME IN", ignoreCase = true) ||
-                        screenText.contains("HOME", ignoreCase = true) ||
-                        screenText.contains("MY TEAM", ignoreCase = true)
+                        screenText.contains("Forgot Password", ignoreCase = true) ||
+                        screenText.contains("App Ver.", ignoreCase = true)
 
                 if (!isBeehiveVisible) {
                     Log.w(TAG, "Beehive not visible on screen, retrying...")
