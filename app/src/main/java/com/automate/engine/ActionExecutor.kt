@@ -82,48 +82,58 @@ class ActionExecutor @Inject constructor(
     }
 
     private fun launchApp(packageName: String): Boolean {
-        return try {
-            // Strategy 1: Try standard launch intent
-            var intent = context.packageManager.getLaunchIntentForPackage(packageName)
+        val knownActivities = mapOf(
+            "com.app.beehivehrms" to "com.tns.NativeScriptActivity"
+        )
+
+        // Strategy 1: Shell am start (most reliable on MIUI)
+        val activityClass = knownActivities[packageName]
+        if (activityClass != null) {
+            try {
+                val process = Runtime.getRuntime().exec(arrayOf(
+                    "am", "start", "-n", "$packageName/$activityClass",
+                    "--activity-brought-to-front"
+                ))
+                val exitCode = process.waitFor()
+                if (exitCode == 0) {
+                    Log.i(TAG, "Launched app via am start: $packageName/$activityClass")
+                    return true
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "am start failed for $packageName", e)
+            }
+        }
+
+        // Strategy 2: Standard launch intent
+        try {
+            val intent = context.packageManager.getLaunchIntentForPackage(packageName)
             if (intent != null) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 context.startActivity(intent)
                 Log.i(TAG, "Launched app via intent: $packageName")
                 return true
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Launch intent failed for $packageName", e)
+        }
 
-            // Strategy 2: MIUI fallback — use known activity components
-            val knownActivities = mapOf(
-                "com.app.beehivehrms" to "com.tns.NativeScriptActivity"
-            )
-            val activityClass = knownActivities[packageName]
-            if (activityClass != null) {
-                intent = Intent().apply {
+        // Strategy 3: Direct component intent
+        if (activityClass != null) {
+            try {
+                val intent = Intent().apply {
                     setClassName(packageName, activityClass)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
                 context.startActivity(intent)
-                Log.i(TAG, "Launched app via fallback activity: $packageName/$activityClass")
+                Log.i(TAG, "Launched app via component: $packageName/$activityClass")
                 return true
+            } catch (e: Exception) {
+                Log.w(TAG, "Component intent failed for $packageName", e)
             }
-
-            // Strategy 3: Use shell am start via Runtime
-            val activityName = knownActivities[packageName] ?: ""
-            if (activityName.isNotEmpty()) {
-                val process = Runtime.getRuntime().exec(arrayOf("am", "start", "-n", "$packageName/$activityName"))
-                val exitCode = process.waitFor()
-                if (exitCode == 0) {
-                    Log.i(TAG, "Launched app via shell: $packageName")
-                    return true
-                }
-            }
-
-            Log.w(TAG, "App not found: $packageName")
-            false
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch app: $packageName", e)
-            false
         }
+
+        Log.w(TAG, "App not found: $packageName")
+        return false
     }
 
     private fun killApp(packageName: String): Boolean {

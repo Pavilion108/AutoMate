@@ -87,8 +87,21 @@ class AutoMateAccessibilityService : AccessibilityService() {
     }
 
     fun findNodeByTextInApp(text: String, packageName: String, exact: Boolean = false): AccessibilityNodeInfo? {
+        // Check if the target app is in the foreground
         val root = rootInActiveWindow ?: return null
-        if (root.packageName?.toString() != packageName) return null
+        val rootPkg = root.packageName?.toString() ?: ""
+        // NativeScript apps: root might show as the WebView package, check window list
+        if (rootPkg != packageName) {
+            // Try to find the window for the target package
+            val windows = windows
+            for (i in 0 until windows.size) {
+                val windowRoot = windows[i].root ?: continue
+                if (windowRoot.packageName?.toString() == packageName) {
+                    return findNodeByTextRecursive(windowRoot, text, exact)
+                }
+            }
+            return null
+        }
         return findNodeByTextRecursive(root, text, exact)
     }
 
