@@ -26,11 +26,13 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun onReceive(context: Context, intent: Intent) {
-        Log.i(TAG, "Received broadcast: ${intent.action}")
+        Log.i(TAG, "Received broadcast: action=${intent.action}, extras=${intent.extras}")
 
         when (intent.action) {
-            // Geofence transitions
-            "com.automate.GEOFENCE_TRANSITION" -> {
+            // Geofence transitions — Play Services sends with the PendingIntent's action
+            "com.automate.GEOFENCE_TRANSITION",
+            null -> {
+                // Check if this is actually a geofence transition from Play Services
                 val geofencingEvent = GeofencingEvent.fromIntent(intent)
                 if (geofencingEvent != null) {
                     handleGeofenceTransition(geofencingEvent)
@@ -59,6 +61,36 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 scope.launch {
                     triggerManager.startLocationTracking()
                 }
+            }
+
+            // Morning prompt alarm — send notification
+            "MORNING_PROMPT" -> {
+                Log.i(TAG, "Morning prompt alarm fired, sending notification")
+                taskRunner.sendMorningPrompt()
+            }
+
+            // Manual test: trigger time-in flow directly
+            "TEST_TIME_IN" -> {
+                Log.i(TAG, "Test mode: triggering time-in flow")
+                taskRunner.startTimeInFlow()
+            }
+
+            // Manual test: trigger time-out flow directly
+            "TEST_TIME_OUT" -> {
+                Log.i(TAG, "Test mode: triggering time-out flow")
+                taskRunner.performTimeOut()
+            }
+
+            // Manual test: send morning prompt
+            "TEST_MORNING" -> {
+                Log.i(TAG, "Test mode: sending morning prompt")
+                taskRunner.sendMorningPrompt()
+            }
+
+            // Manual test: send time-out prompt
+            "TEST_TIMEOUT_PROMPT" -> {
+                Log.i(TAG, "Test mode: sending time-out prompt")
+                taskRunner.sendTimeOutPrompt()
             }
         }
     }

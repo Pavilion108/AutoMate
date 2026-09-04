@@ -198,7 +198,9 @@ class TriggerManager @Inject constructor(
     // === PendingIntent ===
 
     private val geofencePendingIntent: PendingIntent by lazy {
-        val intent = Intent(context, com.automate.geofence.GeofenceBroadcastReceiver::class.java)
+        val intent = Intent(context, com.automate.geofence.GeofenceBroadcastReceiver::class.java).apply {
+            action = "com.automate.GEOFENCE_TRANSITION"
+        }
         PendingIntent.getBroadcast(
             context, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE

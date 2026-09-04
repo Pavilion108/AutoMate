@@ -60,6 +60,10 @@
                 <action android:name="com.automate.GEOFENCE_TRANSITION" />
                 <action android:name="com.automate.REFRESH_LOCATION" />
                 <action android:name="MORNING_PROMPT" />
+                <action android:name="TEST_TIME_IN" />
+                <action android:name="TEST_TIME_OUT" />
+                <action android:name="TEST_MORNING" />
+                <action android:name="TEST_TIMEOUT_PROMPT" />
             </intent-filter>
         </receiver>
 
