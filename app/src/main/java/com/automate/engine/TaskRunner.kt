@@ -130,10 +130,20 @@ class TaskRunner @Inject constructor(
                 delay(5000) // Wait longer for app to fully load
 
                 // Log what's on screen
-                val screenText = service.getScreenText()
+                var screenText = service.getScreenText()
                 Log.i(TAG, "Screen text (first 500 chars): ${screenText.take(500)}")
 
-                // Step 2: Try to click SIGN IN or TIME IN
+                // Step 2: Navigate to attendance page via ME tab
+                val meNode = service.findNodeByText("ME")
+                if (meNode != null) {
+                    Log.i(TAG, "Found ME tab, clicking to navigate to attendance...")
+                    service.performClick(meNode)
+                    delay(3000)
+                    screenText = service.getScreenText()
+                    Log.i(TAG, "After ME click, screen text: ${screenText.take(500)}")
+                }
+
+                // Step 3: Try to click SIGN IN or TIME IN
                 val signInNode = service.findNodeByText("SIGN IN")
                 if (signInNode != null) {
                     Log.i(TAG, "Found SIGN IN, clicking...")
@@ -143,14 +153,14 @@ class TaskRunner @Inject constructor(
                     Log.w(TAG, "SIGN IN not found on screen")
                 }
 
-                // Step 3: Try to click TIME IN
+                // Step 4: Try to click TIME IN
                 val timeInNode = service.findNodeByText("TIME IN")
                 if (timeInNode != null) {
                     Log.i(TAG, "Found TIME IN, clicking...")
                     service.performClick(timeInNode)
                     delay(2000)
 
-                    // Step 4: Handle any popups and wait for success
+                    // Step 5: Handle any popups and wait for success
                     val success = handleTimeInPopups()
                     if (success) {
                         Log.i(TAG, "Time-in successful!")
