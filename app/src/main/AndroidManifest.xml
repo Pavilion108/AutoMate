@@ -52,7 +52,16 @@
         <!-- Geofence Broadcast Receiver -->
         <receiver
             android:name=".geofence.GeofenceBroadcastReceiver"
-            android:exported="false" />
+            android:exported="true">
+            <intent-filter>
+                <action android:name="MORNING_RESPONSE" />
+                <action android:name="TIME_OUT_RESPONSE" />
+                <action android:name="TIME_OUT_TRIGGER" />
+                <action android:name="com.automate.GEOFENCE_TRANSITION" />
+                <action android:name="com.automate.REFRESH_LOCATION" />
+                <action android:name="MORNING_PROMPT" />
+            </intent-filter>
+        </receiver>
 
         <!-- Boot Receiver - re-register geofences after reboot -->
         <receiver
