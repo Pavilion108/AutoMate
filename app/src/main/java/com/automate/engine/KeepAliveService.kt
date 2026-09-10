@@ -5,10 +5,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import com.automate.AutoMateApp
@@ -20,19 +22,22 @@ class KeepAliveService : Service() {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var watchdogJob: Job? = null
     private var rebindAttempts = 0
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "KeepAliveService created")
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
+        acquireWakeLock()
         startWatchdog()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "KeepAliveService started with action: ${intent?.action}")
         when (intent?.action) {
-            ACTION_REBIND_ACCESSIBILITY -> rebindAccessibility()
+            ACTION_REBIND_ACCESSIBILITY -> attemptRebind()
+            ACTION_CHECK_AND_REBIND -> attemptRebind()
         }
         return START_STICKY
     }
@@ -42,47 +47,98 @@ class KeepAliveService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         watchdogJob?.cancel()
+        releaseWakeLock()
         scope.cancel()
         Log.w(TAG, "KeepAliveService destroyed! Will be restarted by system.")
     }
 
+    // === Smart Watchdog ===
+
     private fun startWatchdog() {
         watchdogJob = scope.launch {
             while (isActive) {
-                delay(15_000L) // Check every 15 seconds
+                delay(WATCHDOG_INTERVAL_MS)
 
-                val accEnabled = isAccessibilityEnabled()
+                val accEnabled = isAccessibilityServiceEnabled()
 
                 if (!accEnabled) {
                     rebindAttempts++
-                    Log.w(TAG, "Accessibility service OFF (attempt $rebindAttempts). Re-enabling...")
-                    rebindAccessibility()
+                    Log.w(TAG, "Accessibility OFF (attempt $rebindAttempts)")
+
+                    // Strategy escalation based on attempt count
+                    when {
+                        rebindAttempts <= 3 -> {
+                            // Try lightweight re-enable methods
+                            attemptRebind()
+                        }
+                        rebindAttempts <= 8 -> {
+                            // Try more aggressive methods
+                            attemptRebind()
+                            // Also try starting via shell (works on some devices)
+                            tryShellRebind()
+                        }
+                        else -> {
+                            // Last resort: open accessibility settings for user
+                            Log.w(TAG, "Auto-rebind failed after $rebindAttempts attempts, opening settings")
+                            openAccessibilitySettings()
+                            rebindAttempts = 0 // Reset to avoid spamming settings
+                            delay(30_000) // Wait 30s before checking again
+                        }
+                    }
                 } else {
                     if (rebindAttempts > 0) {
-                        Log.i(TAG, "Accessibility service recovered after $rebindAttempts attempts")
+                        Log.i(TAG, "Accessibility recovered after $rebindAttempts attempts")
                     }
                     rebindAttempts = 0
                 }
 
-                // Update notification
+                // Update notification with current status
                 val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
                 manager.notify(NOTIFICATION_ID, buildNotification())
             }
         }
     }
 
-    private fun isAccessibilityEnabled(): Boolean {
-        val enabled = Settings.Secure.getString(
+    // === Accessibility Detection ===
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val serviceComponent = ComponentName(this, AutoMateAccessibilityService::class.java).flattenToShortString()
+
+        // Method 1: Check Settings.Secure (works on all versions)
+        val enabledServices = Settings.Secure.getString(
             contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ) ?: ""
-        return enabled.contains("com.automate/com.automate.engine.AutoMateAccessibilityService")
+
+        if (enabledServices.contains(serviceComponent)) return true
+
+        // Method 2: Check if our instance is alive
+        if (AutoMateAccessibilityService.instance != null) return true
+
+        // Method 3: Check via accessibility manager
+        try {
+            val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
+            val enabledServicesList = am.getEnabledAccessibilityServiceList(
+                android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_GENERIC
+            )
+            for (serviceInfo in enabledServicesList) {
+                if (serviceInfo.resolveInfo.serviceInfo?.packageName == packageName) {
+                    return true
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "AccessibilityManager check failed", e)
+        }
+
+        return false
     }
 
-    private fun rebindAccessibility() {
-        val serviceString = "com.automate/com.automate.engine.AutoMateAccessibilityService"
+    // === Re-enable Strategies ===
 
-        // Method 1: Try Settings.Secure (requires WRITE_SECURE_SETTINGS)
+    private fun attemptRebind() {
+        val serviceString = ComponentName(this, AutoMateAccessibilityService::class.java).flattenToShortString()
+
+        // Method 1: Direct Settings.Secure write (needs WRITE_SECURE_SETTINGS)
         try {
             Settings.Secure.putString(
                 contentResolver,
@@ -94,43 +150,116 @@ class KeepAliveService : Service() {
                 Settings.Secure.ACCESSIBILITY_ENABLED,
                 1
             )
-            Log.i(TAG, "Accessibility re-enabled via Settings.Secure")
+            Log.i(TAG, "Re-enabled via Settings.Secure")
             return
         } catch (e: SecurityException) {
-            Log.w(TAG, "WRITE_SECURE_SETTINGS not granted, trying shell fallback")
+            Log.d(TAG, "WRITE_SECURE_SETTINGS not available")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to re-enable via Settings.Secure", e)
+            Log.w(TAG, "Settings.Secure write failed", e)
         }
 
-        // Method 2: Try shell command (works if app has shell access)
-        try {
-            Runtime.getRuntime().exec(arrayOf(
-                "settings", "put", "secure", "enabled_accessibility_services", serviceString
-            )).waitFor()
-            Runtime.getRuntime().exec(arrayOf(
-                "settings", "put", "secure", "accessibility_enabled", "1"
-            )).waitFor()
-            Log.i(TAG, "Accessibility re-enabled via shell command")
-            return
-        } catch (e: Exception) {
-            Log.e(TAG, "Shell fallback failed", e)
-        }
-
-        // Method 3: Send broadcast to self to try re-enabling
+        // Method 2: Request accessibility service to rebind itself
         try {
             val intent = Intent(this, AutoMateAccessibilityService::class.java)
             startService(intent)
             Log.i(TAG, "Tried direct service start")
         } catch (e: Exception) {
-            Log.e(TAG, "Direct service start failed", e)
+            Log.d(TAG, "Direct service start failed (expected if disabled)")
         }
 
-        Log.e(TAG, "All rebind methods failed. User must manually re-enable accessibility.")
+        // Method 3: Try enabling via accessibility settings intent with component
+        try {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            startActivity(intent)
+            Log.i(TAG, "Opened accessibility settings for user")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to open accessibility settings", e)
+        }
     }
 
+    private fun tryShellRebind() {
+        val serviceString = ComponentName(this, AutoMateAccessibilityService::class.java).flattenToShortString()
+
+        try {
+            // This works on devices where the app has shell-level permissions
+            val process = Runtime.getRuntime().exec(arrayOf(
+                "settings", "put", "secure", "enabled_accessibility_services", serviceString
+            ))
+            val exitCode = process.waitFor()
+            if (exitCode == 0) {
+                Runtime.getRuntime().exec(arrayOf(
+                    "settings", "put", "secure", "accessibility_enabled", "1"
+                )).waitFor()
+                Log.i(TAG, "Re-enabled via shell command")
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "Shell rebind failed (expected without root)")
+        }
+    }
+
+    private fun openAccessibilitySettings() {
+        try {
+            // Open directly to our app's accessibility settings
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            startActivity(intent)
+
+            // Show a notification guiding the user
+            showRebindNotification()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open accessibility settings", e)
+        }
+    }
+
+    private fun showRebindNotification() {
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, 7777, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = Notification.Builder(this, AutoMateApp.CHANNEL_KEEP_ALIVE)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("AutoMate needs Accessibility")
+            .setContentText("Tap to re-enable Accessibility Service")
+            .setPriority(Notification.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(REBIND_NOTIFICATION_ID, notification)
+    }
+
+    // === WakeLock ===
+
+    private fun acquireWakeLock() {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "AutoMate::KeepAliveWakeLock"
+        ).apply {
+            acquire(60 * 60 * 1000L) // 1 hour, will be re-acquired
+        }
+    }
+
+    private fun releaseWakeLock() {
+        wakeLock?.let {
+            if (it.isHeld) it.release()
+        }
+        wakeLock = null
+    }
+
+    // === Notification ===
+
     private fun buildNotification(): Notification {
-        val accEnabled = AutoMateAccessibilityService.instance != null
-        val statusText = if (accEnabled) "Active - Monitoring" else "Reconnecting..."
+        val accEnabled = isAccessibilityServiceEnabled()
+        val statusText = if (accEnabled) "Active - Monitoring" else "Accessibility OFF - Reconnecting..."
 
         val intent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
@@ -138,14 +267,32 @@ class KeepAliveService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        return Notification.Builder(this, AutoMateApp.CHANNEL_KEEP_ALIVE)
+        // If accessibility is off, make notification high priority with action button
+        val builder = Notification.Builder(this, AutoMateApp.CHANNEL_KEEP_ALIVE)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("AutoMate Active")
+            .setContentTitle("AutoMate")
             .setContentText(statusText)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
-            .build()
+
+        if (!accEnabled) {
+            // Add action button to open accessibility settings
+            val settingsIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            val settingsPending = PendingIntent.getActivity(
+                this, 7778, settingsIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(
+                Notification.Action.Builder(
+                    null, "Enable Accessibility", settingsPending
+                ).build()
+            )
+        }
+
+        return builder.build()
     }
 
     private fun createNotificationChannel() {
@@ -164,16 +311,26 @@ class KeepAliveService : Service() {
     companion object {
         private const val TAG = "KeepAliveService"
         private const val NOTIFICATION_ID = 9999
+        private const val REBIND_NOTIFICATION_ID = 9998
+        private const val WATCHDOG_INTERVAL_MS = 10_000L // Check every 10 seconds
         const val ACTION_REBIND_ACCESSIBILITY = "REBIND_ACCESSIBILITY"
+        const val ACTION_CHECK_AND_REBIND = "CHECK_AND_REBIND"
 
-        fun start(service: android.content.Context) {
-            val intent = Intent(service, KeepAliveService::class.java)
-            service.startForegroundService(intent)
+        fun start(context: Context) {
+            val intent = Intent(context, KeepAliveService::class.java)
+            context.startForegroundService(intent)
         }
 
-        fun rebindAccessibility(context: android.content.Context) {
+        fun rebindAccessibility(context: Context) {
             val intent = Intent(context, KeepAliveService::class.java).apply {
                 action = ACTION_REBIND_ACCESSIBILITY
+            }
+            context.startService(intent)
+        }
+
+        fun checkAndRebind(context: Context) {
+            val intent = Intent(context, KeepAliveService::class.java).apply {
+                action = ACTION_CHECK_AND_REBIND
             }
             context.startService(intent)
         }

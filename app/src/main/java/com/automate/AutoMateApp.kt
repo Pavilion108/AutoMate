@@ -4,6 +4,8 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import android.os.PowerManager
+import com.automate.engine.AccessibilityWatchdogWorker
 import com.automate.engine.KeepAliveService
 import dagger.hilt.android.HiltAndroidApp
 
@@ -14,7 +16,23 @@ class AutoMateApp : Application() {
         super.onCreate()
         createNotificationChannels()
         initDefaultPrefs()
+        requestBatteryOptimization()
         KeepAliveService.start(this)
+        AccessibilityWatchdogWorker.enqueue(this)
+    }
+
+    private fun requestBatteryOptimization() {
+        try {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                // Can't automatically request, but we store the intent for later use
+                // The app will prompt user on first launch
+                val prefs = getSharedPreferences("automate_prefs", MODE_PRIVATE)
+                prefs.edit().putBoolean("needs_battery_optimization", true).apply()
+            }
+        } catch (e: Exception) {
+            // Ignore — not critical
+        }
     }
 
     private fun initDefaultPrefs() {
