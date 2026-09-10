@@ -101,6 +101,9 @@ class TaskRunner @Inject constructor(
                 triggerManagerProvider.get().enableGeofences()
                 triggerManagerProvider.get().startLocationTracking()
                 showStatusNotification("Going to work", "Monitoring your location for check-in")
+
+                // Schedule metro prompt after configurable delay (default 1 hour)
+                scheduleMetroPrompt()
             } else {
                 Log.i(TAG, "User is staying home - disabling everything")
                 variableStore.setArmed(false)
@@ -109,6 +112,80 @@ class TaskRunner @Inject constructor(
                 triggerManagerProvider.get().disableGeofences()
                 triggerManagerProvider.get().stopLocationTracking()
                 showStatusNotification("Staying home", "AutoMate is off for today")
+            }
+        }
+    }
+
+    // === Metro Prompt (ask after morning "Yes") ===
+
+    private fun scheduleMetroPrompt() {
+        scope.launch {
+            val delayMinutes = variableStore.getStringVariable("metro_prompt_delay_minutes").toIntOrNull() ?: 60
+            Log.i(TAG, "Scheduling metro prompt in $delayMinutes minutes")
+            delay(delayMinutes * 60 * 1000L)
+
+            // Only ask if user is still going to work
+            val goingToWork = variableStore.getBooleanVariable("going_to_work")
+            if (!goingToWork) return@launch
+
+            sendMetroPrompt()
+        }
+    }
+
+    fun sendMetroPrompt() {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            action = "METRO_PROMPT"
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context, 300, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val yesIntent = Intent(context, com.automate.geofence.GeofenceBroadcastReceiver::class.java).apply {
+            action = "METRO_PROMPT_RESPONSE"
+            putExtra("need_metro", true)
+        }
+        val yesPending = PendingIntent.getBroadcast(
+            context, 301, yesIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val noIntent = Intent(context, com.automate.geofence.GeofenceBroadcastReceiver::class.java).apply {
+            action = "METRO_PROMPT_RESPONSE"
+            putExtra("need_metro", false)
+        }
+        val noPending = PendingIntent.getBroadcast(
+            context, 302, noIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, AutoMateApp.CHANNEL_MORNING_PROMPT)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("Metro Ticket")
+            .setContentText("Need a metro ticket today?")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .addAction(android.R.drawable.ic_menu_send, "Yes, book ticket", yesPending)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "No, skip", noPending)
+            .build()
+
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(notificationId++, notification)
+        Log.i(TAG, "Metro prompt sent")
+    }
+
+    fun handleMetroPromptResponse(needMetro: Boolean) {
+        scope.launch {
+            if (needMetro) {
+                Log.i(TAG, "User needs metro ticket - starting booking flow")
+                showStatusNotification("Metro Ticket", "Starting booking flow...")
+                metroTicketFlow.start()
+            } else {
+                Log.i(TAG, "User skipped metro ticket")
+                showStatusNotification("Skipped", "No metro ticket today")
             }
         }
     }

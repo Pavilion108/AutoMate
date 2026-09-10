@@ -31,6 +31,7 @@ fun SettingsScreen(
     var showMorningTimeDialog by remember { mutableStateOf(false) }
     var showGeofenceRadiusDialog by remember { mutableStateOf(false) }
     var showExitDistanceDialog by remember { mutableStateOf(false) }
+    var showMetroPromptDelayDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -116,6 +117,22 @@ fun SettingsScreen(
                 onClick = { showMorningTimeDialog = true },
                 modifier = Modifier.padding(start = 72.dp)
             ) { Text("Change Time") }
+
+            HorizontalDivider()
+
+            // Metro Prompt
+            ListItem(
+                headlineContent = { Text("Metro Ticket Prompt") },
+                supportingContent = {
+                    val delay = uiState.metroPromptDelayMinutes
+                    Text("Ask $delay min after saying Yes to morning prompt")
+                },
+                leadingContent = { Icon(Icons.Default.Train, null) }
+            )
+            TextButton(
+                onClick = { showMetroPromptDelayDialog = true },
+                modifier = Modifier.padding(start = 72.dp)
+            ) { Text("Change Delay") }
 
             HorizontalDivider()
 
@@ -208,6 +225,18 @@ fun SettingsScreen(
             format = { "${it.toInt()}m" },
             onConfirm = { viewModel.setExitWatchDistance(it) },
             onDismiss = { showExitDistanceDialog = false }
+        )
+    }
+
+    if (showMetroPromptDelayDialog) {
+        SliderDialog(
+            title = "Metro Prompt Delay",
+            initialValue = uiState.metroPromptDelayMinutes.toFloat(),
+            valueRange = 15f..180f,
+            step = 15f,
+            format = { "${it.toInt()} min" },
+            onConfirm = { viewModel.setMetroPromptDelay(it.toInt()) },
+            onDismiss = { showMetroPromptDelayDialog = false }
         )
     }
 }

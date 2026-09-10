@@ -141,10 +141,10 @@ class MetroTicketFlow @Inject constructor(
         if (!selectPaymentMethod(service)) return false
         delay(3000)
 
-        // === STEP 15: GPay opens — find "Pay" button and click ===
-        sendNotification("Booking Metro Ticket", "Processing payment...")
-        if (!performGPayPayment(service)) return false
-        delay(3000)
+        // === STEP 15: GPay opens — notify user to complete payment ===
+        sendNotification("Booking Metro Ticket", "GPay opened — complete your payment, then come back to AutoMate")
+        waitForUserPayment(service)
+        delay(2000)
 
         // === STEP 16: GPay auto-closes, back in WhatsApp — find "View eTicket" ===
         sendNotification("Booking Metro Ticket", "Fetching eTicket...")
@@ -153,6 +153,28 @@ class MetroTicketFlow @Inject constructor(
 
         sendNotification("Metro Ticket Booked", "Your eTicket is ready! Tap to view.")
         return true
+    }
+
+    // === STEP 15 helper: Wait for user to complete GPay payment ===
+    private suspend fun waitForUserPayment(service: AutoMateAccessibilityService) {
+        // Poll until we're back in WhatsApp (GPay closed)
+        for (i in 1..60) { // up to 60 seconds
+            val screenText = service.getScreenText()
+            // Check if we're back in WhatsApp
+            if (screenText.contains("WhatsApp", ignoreCase = true) ||
+                screenText.contains("View eTicket", ignoreCase = true) ||
+                screenText.contains("eTicket", ignoreCase = true) ||
+                screenText.contains("View ticket", ignoreCase = true)) {
+                Log.i(TAG, "Back in WhatsApp after payment")
+                return
+            }
+            // Still in GPay or payment screen
+            if (i % 5 == 0) {
+                sendNotification("Waiting for payment", "Complete payment in GPay (${i}s)...")
+            }
+            delay(1000)
+        }
+        Log.w(TAG, "Timeout waiting for user payment, continuing anyway")
     }
 
     // === STEP 1: Launch WhatsApp ===

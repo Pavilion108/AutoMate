@@ -51,6 +51,12 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 taskRunner.handleTimeOutResponse(watchLocation)
             }
 
+            // Metro prompt response
+            "METRO_PROMPT_RESPONSE" -> {
+                val needMetro = intent.getBooleanExtra("need_metro", false)
+                taskRunner.handleMetroPromptResponse(needMetro)
+            }
+
             // Time-out trigger (from alarm)
             "TIME_OUT_TRIGGER" -> {
                 taskRunner.performTimeOut()
@@ -85,6 +91,12 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             "TEST_MORNING" -> {
                 Log.i(TAG, "Test mode: sending morning prompt")
                 taskRunner.sendMorningPrompt()
+            }
+
+            // Manual test: send metro prompt
+            "TEST_METRO_PROMPT" -> {
+                Log.i(TAG, "Test mode: sending metro prompt")
+                taskRunner.sendMetroPrompt()
             }
 
             // Manual test: send time-out prompt

@@ -23,7 +23,8 @@ data class SettingsUiState(
     val morningHour: Int = 7,
     val morningMinute: Int = 30,
     val geofenceRadius: Float = 200f,
-    val exitWatchDistance: Float = 50f
+    val exitWatchDistance: Float = 50f,
+    val metroPromptDelayMinutes: Int = 60
 )
 
 @HiltViewModel
@@ -48,6 +49,7 @@ class SettingsViewModel @Inject constructor(
             val morningMinute = prefs.getInt("morning_minute", 30)
             val geofenceRadius = safeGetFloat(prefs, "geofence_radius", 200f)
             val exitWatchDistance = safeGetFloat(prefs, "exit_watch_distance", 50f)
+            val metroPromptDelay = prefs.getInt("metro_prompt_delay_minutes", 60)
 
             _uiState.value = SettingsUiState(
                 workHours = workHours,
@@ -55,7 +57,8 @@ class SettingsViewModel @Inject constructor(
                 morningHour = morningHour,
                 morningMinute = morningMinute,
                 geofenceRadius = geofenceRadius,
-                exitWatchDistance = exitWatchDistance
+                exitWatchDistance = exitWatchDistance,
+                metroPromptDelayMinutes = metroPromptDelay
             )
 
             // Sync work hours to VariableStore
@@ -108,6 +111,15 @@ class SettingsViewModel @Inject constructor(
             val prefs = context.getSharedPreferences("automate_prefs", Context.MODE_PRIVATE)
             prefs.edit().putFloat("exit_watch_distance", distance).apply()
             variableStore.setVariable("exit_watch_distance", distance.toInt().toString(), "STRING")
+        }
+    }
+
+    fun setMetroPromptDelay(minutes: Int) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(metroPromptDelayMinutes = minutes)
+            val prefs = context.getSharedPreferences("automate_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putInt("metro_prompt_delay_minutes", minutes).apply()
+            variableStore.setVariable("metro_prompt_delay_minutes", minutes.toString(), "INTEGER")
         }
     }
 

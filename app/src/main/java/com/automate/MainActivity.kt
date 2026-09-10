@@ -98,6 +98,9 @@ class MainActivity : ComponentActivity() {
             "TIME_OUT_PROMPT" -> {
                 taskRunner.sendTimeOutPrompt()
             }
+            "METRO_PROMPT" -> {
+                taskRunner.sendMetroPrompt()
+            }
         }
     }
 
