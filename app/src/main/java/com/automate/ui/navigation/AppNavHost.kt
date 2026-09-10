@@ -90,7 +90,6 @@ fun AppNavHost(navController: NavHostController) {
             MetroTicketSettingsScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToBooking = {
-                    // Navigate back to dashboard and trigger booking
                     navController.popBackStack()
                 }
             )

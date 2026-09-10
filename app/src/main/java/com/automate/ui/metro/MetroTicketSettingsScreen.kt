@@ -136,7 +136,10 @@ fun MetroTicketSettingsScreen(
 
             // Book Now Button
             Button(
-                onClick = onNavigateToBooking,
+                onClick = {
+                    viewModel.startBooking()
+                    onNavigateBack()
+                },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !uiState.isBookingActive
             ) {

@@ -3,6 +3,7 @@ package com.automate.ui.metro
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.automate.engine.TaskRunner
 import com.automate.engine.VariableStore
 import com.automate.profiles.metro.MetroTicketProfile
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,7 +25,8 @@ data class MetroTicketUiState(
 @HiltViewModel
 class MetroTicketSettingsViewModel @Inject constructor(
     application: Application,
-    private val variableStore: VariableStore
+    private val variableStore: VariableStore,
+    private val taskRunner: TaskRunner
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(MetroTicketUiState())
@@ -87,5 +89,10 @@ class MetroTicketSettingsViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(initialMessage = message)
             variableStore.setVariable("metro_initial_message", message, "STRING")
         }
+    }
+
+    fun startBooking() {
+        taskRunner.startMetroTicketFlow()
+        _uiState.value = _uiState.value.copy(isBookingActive = true)
     }
 }
