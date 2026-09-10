@@ -1,12 +1,14 @@
 package com.automate
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -18,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.navigation.compose.rememberNavController
 import com.automate.engine.AutoMateAccessibilityService
+import com.automate.engine.KeepAliveService
 import com.automate.engine.TaskRunner
 import com.automate.ui.navigation.AppNavHost
 import com.automate.ui.navigation.Screen
@@ -58,6 +61,28 @@ class MainActivity : ComponentActivity() {
 
         // Handle notification actions
         handleIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Recover accessibility service if it was killed
+        if (AutoMateAccessibilityService.instance == null) {
+            val serviceEnabled = isAccessibilityServiceEnabled()
+            if (serviceEnabled) {
+                // Service is enabled in settings but not bound — system may have killed it
+                // KeepAliveService will handle rebinding, just make sure it's running
+                KeepAliveService.checkAndRebind(this)
+            }
+        }
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val serviceComponent = ComponentName(this, AutoMateAccessibilityService::class.java).flattenToShortString()
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: ""
+        return enabledServices.contains(serviceComponent)
     }
 
     override fun onNewIntent(intent: Intent) {

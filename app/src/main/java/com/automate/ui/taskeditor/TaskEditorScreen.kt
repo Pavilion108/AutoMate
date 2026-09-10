@@ -77,7 +77,6 @@ fun TaskEditorScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Task Name
             OutlinedTextField(
                 value = taskName,
                 onValueChange = { taskName = it },
@@ -85,7 +84,6 @@ fun TaskEditorScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // Trigger Type
             Text("Trigger", fontWeight = FontWeight.Bold)
             var expanded by remember { mutableStateOf(false) }
 
@@ -123,7 +121,6 @@ fun TaskEditorScreen(
                 }
             }
 
-            // Work Hours (for exit/distance tasks)
             if (selectedTrigger == "GEOFENCE_EXIT") {
                 Text("Work Hours Before Prompt", fontWeight = FontWeight.Bold)
                 Slider(
@@ -135,7 +132,6 @@ fun TaskEditorScreen(
                 Text("$workHours hours", modifier = Modifier.align(Alignment.CenterHorizontally))
             }
 
-            // Schedule Time (for time-based tasks)
             if (selectedTrigger == "TIME_SCHEDULE") {
                 Text("Schedule Time", fontWeight = FontWeight.Bold)
                 var showTimePicker by remember { mutableStateOf(false) }
@@ -165,40 +161,15 @@ fun TaskEditorScreen(
                 }
 
                 if (showTimePicker) {
-                    val timePickerState = rememberTimePickerState(
+                    SimpleTimePickerInline(
                         initialHour = scheduleHour,
                         initialMinute = scheduleMinute,
-                        is24Hour = false
-                    )
-                    AlertDialog(
-                        onDismissRequest = { showTimePicker = false },
-                        title = { Text("Schedule Time") },
-                        text = {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    "When should this task trigger?",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.padding(bottom = 16.dp)
-                                )
-                                TimePicker(
-                                    state = timePickerState,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
+                        onConfirm = { h, m ->
+                            scheduleHour = h
+                            scheduleMinute = m
+                            showTimePicker = false
                         },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                scheduleHour = timePickerState.hour
-                                scheduleMinute = timePickerState.minute
-                                showTimePicker = false
-                            }) { Text("Set") }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { showTimePicker = false }) { Text("Cancel") }
-                        }
+                        onDismiss = { showTimePicker = false }
                     )
                 }
 
@@ -209,38 +180,30 @@ fun TaskEditorScreen(
                 )
             }
 
-            // Actions Preview — shows exactly what this task will do
-            Text("Actions", fontWeight = FontWeight.Bold)
+            Text("What this task does", fontWeight = FontWeight.Bold)
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     when (selectedTrigger) {
                         "GEOFENCE_ENTER" -> {
-                            Text("1. Launch Beehive HRMS", style = MaterialTheme.typography.bodySmall)
-                            Text("2. Wait for app to load", style = MaterialTheme.typography.bodySmall)
-                            Text("3. Click SIGN IN", style = MaterialTheme.typography.bodySmall)
-                            Text("4. Click TIME IN", style = MaterialTheme.typography.bodySmall)
-                            Text("5. Handle popups / location errors", style = MaterialTheme.typography.bodySmall)
-                            Text("6. Save GPS location", style = MaterialTheme.typography.bodySmall)
-                            Text("7. Schedule time-out prompt at 7h", style = MaterialTheme.typography.bodySmall)
-                            Text("8. Close app", style = MaterialTheme.typography.bodySmall)
+                            Text("When you arrive at the office, AutoMate will:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Open Beehive HRMS and mark your attendance automatically", style = MaterialTheme.typography.bodySmall)
+                            Text("Handle any popups or GPS errors", style = MaterialTheme.typography.bodySmall)
+                            Text("Ask you before marking time-out in the evening", style = MaterialTheme.typography.bodySmall)
                         }
                         "GEOFENCE_EXIT" -> {
-                            Text("1. Wait for work hours ($workHours h)", style = MaterialTheme.typography.bodySmall)
-                            Text("2. Ask: 'About to leave?'", style = MaterialTheme.typography.bodySmall)
-                            Text("3. If yes: watch GPS for exit", style = MaterialTheme.typography.bodySmall)
-                            Text("4. If no: ask again at 8.5h", style = MaterialTheme.typography.bodySmall)
-                            Text("5. On exit: Launch Beehive HRMS", style = MaterialTheme.typography.bodySmall)
-                            Text("6. Click SIGN IN if needed", style = MaterialTheme.typography.bodySmall)
-                            Text("7. Click TIME OUT", style = MaterialTheme.typography.bodySmall)
-                            Text("8. Handle popups", style = MaterialTheme.typography.bodySmall)
-                            Text("9. Close app, disable geofences", style = MaterialTheme.typography.bodySmall)
+                            Text("When your work hours are done and you leave:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("AutoMate will ask if you're leaving for the day", style = MaterialTheme.typography.bodySmall)
+                            Text("Then mark your time-out in Beehive HRMS", style = MaterialTheme.typography.bodySmall)
+                            Text("You can be prompted again later if you stay", style = MaterialTheme.typography.bodySmall)
                         }
                         "TIME_SCHEDULE" -> {
-                            Text("1. Alarm fires at ${formatTime(scheduleHour, scheduleMinute)}", style = MaterialTheme.typography.bodySmall)
-                            Text("2. Show morning prompt notification", style = MaterialTheme.typography.bodySmall)
-                            Text("3. User taps 'Yes, going!' or 'No, staying home'", style = MaterialTheme.typography.bodySmall)
-                            Text("4. If yes: arm geofences, start GPS", style = MaterialTheme.typography.bodySmall)
-                            Text("5. If no: disable everything for the day", style = MaterialTheme.typography.bodySmall)
+                            Text("At ${formatTime(scheduleHour, scheduleMinute)}, AutoMate will:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Ask if you're going to work today", style = MaterialTheme.typography.bodySmall)
+                            Text("If yes: track your location for attendance", style = MaterialTheme.typography.bodySmall)
+                            Text("If no: no tracking for the day", style = MaterialTheme.typography.bodySmall)
                         }
                         else -> {
                             Text("Configure actions after saving", style = MaterialTheme.typography.bodySmall)
@@ -250,6 +213,60 @@ fun TaskEditorScreen(
             }
         }
     }
+}
+
+@Composable
+fun SimpleTimePickerInline(
+    initialHour: Int,
+    initialMinute: Int,
+    onConfirm: (Int, Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var hour by remember { mutableIntStateOf(initialHour) }
+    var minute by remember { mutableIntStateOf(initialMinute) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set Time") },
+        text = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    IconButton(onClick = { if (hour < 23) hour++ }) {
+                        Icon(Icons.Default.KeyboardArrowUp, "Up")
+                    }
+                    Text(String.format("%02d", hour), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = { if (hour > 0) hour-- }) {
+                        Icon(Icons.Default.KeyboardArrowDown, "Down")
+                    }
+                    Text("Hour", style = MaterialTheme.typography.bodySmall)
+                }
+                Text(":", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp))
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    IconButton(onClick = { if (minute < 55) minute += 5 else minute = 0 }) {
+                        Icon(Icons.Default.KeyboardArrowUp, "Up")
+                    }
+                    Text(String.format("%02d", minute), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = { if (minute > 0) minute -= 5 else minute = 55 }) {
+                        Icon(Icons.Default.KeyboardArrowDown, "Down")
+                    }
+                    Text("Minute", style = MaterialTheme.typography.bodySmall)
+                }
+                Column(modifier = Modifier.padding(start = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    val isPM = hour >= 12
+                    AssistChip(
+                        onClick = { hour = if (isPM) hour - 12 else hour + 12 },
+                        label = { Text(if (isPM) "PM" else "AM") }
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(hour, minute) }) { Text("Set") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 private fun getTriggerDisplayName(type: String): String {

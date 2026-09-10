@@ -284,13 +284,12 @@ fun TaskCard(
                         Text(
                             actionSummary,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 2
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                     if (lastRun != null) {
                         Text(
-                            "Last run: $lastRun",
+                            "Last used: $lastRun",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

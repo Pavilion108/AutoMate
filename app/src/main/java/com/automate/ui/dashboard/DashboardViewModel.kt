@@ -99,10 +99,10 @@ class DashboardViewModel @Inject constructor(
     private fun getTriggerDescription(task: Task): String {
         return when (task.trigger.type) {
             com.automate.domain.model.TriggerType.GEOFENCE_ENTER -> {
-                "Trigger: On entering ${task.trigger.radiusMeters.toInt()}m area"
+                "Triggers when you arrive at the office"
             }
             com.automate.domain.model.TriggerType.GEOFENCE_EXIT -> {
-                "Trigger: After work hours, on leaving area"
+                "Triggers when you leave the office"
             }
             com.automate.domain.model.TriggerType.TIME_SCHEDULE -> {
                 val hour = task.trigger.hour
@@ -113,33 +113,26 @@ class DashboardViewModel @Inject constructor(
                     hour > 12 -> hour - 12
                     else -> hour
                 }
-                "Schedule: Daily at $displayHour:${String.format("%02d", min)} $period (Mon-Fri)"
+                "Daily at $displayHour:${String.format("%02d", min)} $period"
             }
-            com.automate.domain.model.TriggerType.MANUAL -> "Manual trigger"
-            com.automate.domain.model.TriggerType.MORNING_PROMPT_RESPONSE -> "Morning prompt response"
+            com.automate.domain.model.TriggerType.MANUAL -> "Manual"
+            com.automate.domain.model.TriggerType.MORNING_PROMPT_RESPONSE -> "Morning prompt"
             com.automate.domain.model.TriggerType.WORK_HOURS_COMPLETE -> "After work hours"
             com.automate.domain.model.TriggerType.DISTANCE_FROM_LOCATION -> {
-                "Trigger: ${task.trigger.distanceMeters.toInt()}m from office"
+                "When you're near the office"
             }
-            com.automate.domain.model.TriggerType.APP_LAUNCHED -> "When ${task.trigger.packageName} launches"
+            com.automate.domain.model.TriggerType.APP_LAUNCHED -> "When app opens"
         }
     }
 
     private fun getActionSummary(task: Task): String? {
         if (task.actions.isEmpty()) return null
-        val actionNames = task.actions.map { action ->
-            when (action.type) {
-                com.automate.domain.model.ActionType.LAUNCH_APP -> "Launch ${action.packageName?.substringAfterLast('.') ?: "app"}"
-                com.automate.domain.model.ActionType.CLICK_ELEMENT -> "Click '${action.target}'"
-                com.automate.domain.model.ActionType.WAIT -> "Wait ${action.seconds}s"
-                com.automate.domain.model.ActionType.POPUP_HANDLER -> "Handle popups"
-                com.automate.domain.model.ActionType.GLOBAL_ACTION -> "Close app"
-                com.automate.domain.model.ActionType.SHOW_NOTIFICATION -> "Show notification"
-                com.automate.domain.model.ActionType.SET_VARIABLE -> "Set ${action.variableName}"
-                else -> action.type.name
-            }
+        return when (task.trigger.type) {
+            com.automate.domain.model.TriggerType.GEOFENCE_ENTER -> "Marks your attendance in Beehive HRMS"
+            com.automate.domain.model.TriggerType.GEOFENCE_EXIT -> "Marks your time-out in Beehive HRMS"
+            com.automate.domain.model.TriggerType.TIME_SCHEDULE -> "Asks if you're going to work today"
+            else -> "Automates your workflow"
         }
-        return actionNames.joinToString(" → ")
     }
 
     private fun checkAccessibilityService() {

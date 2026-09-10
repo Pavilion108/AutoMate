@@ -2,6 +2,7 @@ package com.automate.ui.settings
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -49,7 +50,6 @@ fun SettingsScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
         ) {
-            // System Settings
             Text(
                 "System",
                 style = MaterialTheme.typography.titleMedium,
@@ -60,13 +60,15 @@ fun SettingsScreen(
             ListItem(
                 headlineContent = { Text("Accessibility Service") },
                 supportingContent = {
-                    Text(if (AutoMateAccessibilityService.instance != null) "Enabled" else "Disabled")
+                    Text(if (AutoMateAccessibilityService.instance != null) "Active" else "Needs activation")
                 },
                 leadingContent = { Icon(Icons.Default.Accessibility, null) },
                 trailingContent = {
                     if (AutoMateAccessibilityService.instance == null) {
                         TextButton(onClick = {
-                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                            try {
+                                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                            } catch (_: Exception) {}
                         }) { Text("Enable") }
                     }
                 }
@@ -74,20 +76,18 @@ fun SettingsScreen(
 
             HorizontalDivider()
 
-            // Work Hours
             ListItem(
                 headlineContent = { Text("Work Hours") },
-                supportingContent = { Text("${uiState.workHours} hours (${formatHoursAndMinutes(uiState.workHours.toLong())})") },
+                supportingContent = { Text("${uiState.workHours} hours") },
                 leadingContent = { Icon(Icons.Default.Schedule, null) }
             )
             TextButton(
                 onClick = { showWorkHoursDialog = true },
                 modifier = Modifier.padding(start = 72.dp)
-            ) { Text("Edit") }
+            ) { Text("Change") }
 
             HorizontalDivider()
 
-            // Notification Settings
             Text(
                 "Notifications",
                 style = MaterialTheme.typography.titleMedium,
@@ -98,7 +98,11 @@ fun SettingsScreen(
             ListItem(
                 headlineContent = { Text("Morning Prompt") },
                 supportingContent = {
-                    Text("Daily at ${formatTime(uiState.morningHour, uiState.morningMinute)} (Mon-Fri)")
+                    val h = uiState.morningHour
+                    val m = uiState.morningMinute
+                    val period = if (h < 12) "AM" else "PM"
+                    val displayH = when { h == 0 -> 12; h > 12 -> h - 12; else -> h }
+                    Text("Daily at $displayH:${String.format("%02d", m)} $period, Mon-Fri")
                 },
                 leadingContent = { Icon(Icons.Default.Alarm, null) },
                 trailingContent = {
@@ -115,7 +119,6 @@ fun SettingsScreen(
 
             HorizontalDivider()
 
-            // Location Settings
             Text(
                 "Location",
                 style = MaterialTheme.typography.titleMedium,
@@ -125,27 +128,26 @@ fun SettingsScreen(
 
             ListItem(
                 headlineContent = { Text("Geofence Radius") },
-                supportingContent = { Text("${uiState.geofenceRadius.toInt()}m") },
+                supportingContent = { Text("${uiState.geofenceRadius.toInt()}m around office") },
                 leadingContent = { Icon(Icons.Default.LocationOn, null) }
             )
             TextButton(
                 onClick = { showGeofenceRadiusDialog = true },
                 modifier = Modifier.padding(start = 72.dp)
-            ) { Text("Edit") }
+            ) { Text("Change") }
 
             ListItem(
                 headlineContent = { Text("Exit Watch Distance") },
-                supportingContent = { Text("${uiState.exitWatchDistance.toInt()}m from office") },
+                supportingContent = { Text("${uiState.exitWatchDistance.toInt()}m from check-in spot") },
                 leadingContent = { Icon(Icons.Default.LocationOff, null) }
             )
             TextButton(
                 onClick = { showExitDistanceDialog = true },
                 modifier = Modifier.padding(start = 72.dp)
-            ) { Text("Edit") }
+            ) { Text("Change") }
 
             HorizontalDivider()
 
-            // About
             Text(
                 "About",
                 style = MaterialTheme.typography.titleMedium,
@@ -161,9 +163,8 @@ fun SettingsScreen(
         }
     }
 
-    // Morning Time Picker Dialog
     if (showMorningTimeDialog) {
-        MorningTimePickerDialog(
+        SimpleTimePickerDialog(
             initialHour = uiState.morningHour,
             initialMinute = uiState.morningMinute,
             onConfirm = { hour, minute ->
@@ -174,59 +175,52 @@ fun SettingsScreen(
         )
     }
 
-    // Work Hours Dialog
     if (showWorkHoursDialog) {
-        NumberInputDialog(
+        SliderDialog(
             title = "Work Hours",
             initialValue = uiState.workHours,
             valueRange = 4f..12f,
             step = 0.5f,
-            unit = "hours",
+            format = { "${it.toInt()} hours" },
             onConfirm = { viewModel.setWorkHours(it) },
             onDismiss = { showWorkHoursDialog = false }
         )
     }
 
-    // Geofence Radius Dialog
     if (showGeofenceRadiusDialog) {
-        NumberInputDialog(
+        SliderDialog(
             title = "Geofence Radius",
             initialValue = uiState.geofenceRadius,
             valueRange = 50f..500f,
             step = 25f,
-            unit = "meters",
+            format = { "${it.toInt()}m" },
             onConfirm = { viewModel.setGeofenceRadius(it) },
             onDismiss = { showGeofenceRadiusDialog = false }
         )
     }
 
-    // Exit Distance Dialog
     if (showExitDistanceDialog) {
-        NumberInputDialog(
+        SliderDialog(
             title = "Exit Watch Distance",
             initialValue = uiState.exitWatchDistance,
             valueRange = 10f..200f,
             step = 10f,
-            unit = "meters from office",
+            format = { "${it.toInt()}m" },
             onConfirm = { viewModel.setExitWatchDistance(it) },
             onDismiss = { showExitDistanceDialog = false }
         )
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MorningTimePickerDialog(
+fun SimpleTimePickerDialog(
     initialHour: Int,
     initialMinute: Int,
     onConfirm: (Int, Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val timePickerState = rememberTimePickerState(
-        initialHour = initialHour,
-        initialMinute = initialMinute,
-        is24Hour = false
-    )
+    var hour by remember { mutableIntStateOf(initialHour) }
+    var minute by remember { mutableIntStateOf(initialMinute) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -241,16 +235,69 @@ fun MorningTimePickerDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
-                TimePicker(
-                    state = timePickerState,
-                    modifier = Modifier.fillMaxWidth()
-                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Hour selector
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        IconButton(onClick = { if (hour < 23) hour++ }) {
+                            Icon(Icons.Default.KeyboardArrowUp, "Increase hour")
+                        }
+                        Text(
+                            String.format("%02d", hour),
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        IconButton(onClick = { if (hour > 0) hour-- }) {
+                            Icon(Icons.Default.KeyboardArrowDown, "Decrease hour")
+                        }
+                        Text("Hour", style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    Text(
+                        ":",
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+
+                    // Minute selector
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        IconButton(onClick = { if (minute < 55) minute += 5 else minute = 0 }) {
+                            Icon(Icons.Default.KeyboardArrowUp, "Increase minute")
+                        }
+                        Text(
+                            String.format("%02d", minute),
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        IconButton(onClick = { if (minute > 0) minute -= 5 else minute = 55 }) {
+                            Icon(Icons.Default.KeyboardArrowDown, "Decrease minute")
+                        }
+                        Text("Minute", style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    // AM/PM toggle
+                    Column(
+                        modifier = Modifier.padding(start = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        val isPM = hour >= 12
+                        AssistChip(
+                            onClick = {
+                                hour = if (isPM) hour - 12 else hour + 12
+                            },
+                            label = { Text(if (isPM) "PM" else "AM") }
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                onConfirm(timePickerState.hour, timePickerState.minute)
-            }) { Text("Save") }
+            TextButton(onClick = { onConfirm(hour, minute) }) { Text("Save") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
@@ -258,29 +305,13 @@ fun MorningTimePickerDialog(
     )
 }
 
-private fun formatTime(hour: Int, minute: Int): String {
-    val period = if (hour < 12) "AM" else "PM"
-    val displayHour = when {
-        hour == 0 -> 12
-        hour > 12 -> hour - 12
-        else -> hour
-    }
-    return "$displayHour:${String.format("%02d", minute)} $period"
-}
-
-private fun formatHoursAndMinutes(hours: Long): String {
-    val h = hours
-    val m = ((hours - h) * 60).toInt()
-    return if (m > 0) "${h}h ${m}m" else "${h}h"
-}
-
 @Composable
-fun NumberInputDialog(
+fun SliderDialog(
     title: String,
     initialValue: Float,
     valueRange: ClosedFloatingPointRange<Float>,
     step: Float,
-    unit: String,
+    format: (Float) -> String,
     onConfirm: (Float) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -292,7 +323,7 @@ fun NumberInputDialog(
         text = {
             Column {
                 Text(
-                    "${sliderValue.toInt()} $unit",
+                    format(sliderValue),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 16.dp)
@@ -308,16 +339,13 @@ fun NumberInputDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("${valueRange.start.toInt()} $unit", style = MaterialTheme.typography.bodySmall)
-                    Text("${valueRange.endInclusive.toInt()} $unit", style = MaterialTheme.typography.bodySmall)
+                    Text(format(valueRange.start), style = MaterialTheme.typography.bodySmall)
+                    Text(format(valueRange.endInclusive), style = MaterialTheme.typography.bodySmall)
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                onConfirm(sliderValue)
-                onDismiss()
-            }) { Text("Save") }
+            TextButton(onClick = { onConfirm(sliderValue); onDismiss() }) { Text("Save") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
