@@ -137,6 +137,7 @@ fun DashboardScreen(
                     name = task.name,
                     isEnabled = task.isEnabled,
                     triggerDescription = task.triggerDescription,
+                    actionSummary = task.actionSummary,
                     lastRun = task.lastRunDescription,
                     onClick = { onNavigateToTaskEditor(task.id) },
                     onToggle = { viewModel.toggleTask(task.id) }
@@ -253,6 +254,7 @@ fun TaskCard(
     name: String,
     isEnabled: Boolean,
     triggerDescription: String,
+    actionSummary: String?,
     lastRun: String?,
     onClick: () -> Unit,
     onToggle: () -> Unit
@@ -261,29 +263,41 @@ fun TaskCard(
         modifier = Modifier.fillMaxWidth(),
         onClick = onClick
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(16.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(name, fontWeight = FontWeight.Bold)
-                Text(
-                    triggerDescription,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (lastRun != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(name, fontWeight = FontWeight.Bold)
                     Text(
-                        "Last run: $lastRun",
+                        triggerDescription,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (actionSummary != null) {
+                        Text(
+                            actionSummary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 2
+                        )
+                    }
+                    if (lastRun != null) {
+                        Text(
+                            "Last run: $lastRun",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
+                Switch(checked = isEnabled, onCheckedChange = { onToggle() })
             }
-            Switch(checked = isEnabled, onCheckedChange = { onToggle() })
         }
     }
 }

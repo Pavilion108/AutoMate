@@ -4,7 +4,6 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -14,7 +13,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.automate.engine.AutoMateAccessibilityService
@@ -29,6 +27,7 @@ fun SettingsScreen(
     val context = LocalContext.current
 
     var showWorkHoursDialog by remember { mutableStateOf(false) }
+    var showMorningTimeDialog by remember { mutableStateOf(false) }
     var showGeofenceRadiusDialog by remember { mutableStateOf(false) }
     var showExitDistanceDialog by remember { mutableStateOf(false) }
 
@@ -79,10 +78,7 @@ fun SettingsScreen(
             ListItem(
                 headlineContent = { Text("Work Hours") },
                 supportingContent = { Text("${uiState.workHours} hours (${formatHoursAndMinutes(uiState.workHours.toLong())})") },
-                leadingContent = { Icon(Icons.Default.Schedule, null) },
-                modifier = Modifier.run {
-                    this
-                }
+                leadingContent = { Icon(Icons.Default.Schedule, null) }
             )
             TextButton(
                 onClick = { showWorkHoursDialog = true },
@@ -101,7 +97,9 @@ fun SettingsScreen(
 
             ListItem(
                 headlineContent = { Text("Morning Prompt") },
-                supportingContent = { Text("Daily reminder at 7:30 AM") },
+                supportingContent = {
+                    Text("Daily at ${formatTime(uiState.morningHour, uiState.morningMinute)} (Mon-Fri)")
+                },
                 leadingContent = { Icon(Icons.Default.Alarm, null) },
                 trailingContent = {
                     Switch(
@@ -110,6 +108,10 @@ fun SettingsScreen(
                     )
                 }
             )
+            TextButton(
+                onClick = { showMorningTimeDialog = true },
+                modifier = Modifier.padding(start = 72.dp)
+            ) { Text("Change Time") }
 
             HorizontalDivider()
 
@@ -153,10 +155,23 @@ fun SettingsScreen(
 
             ListItem(
                 headlineContent = { Text("AutoMate") },
-                supportingContent = { Text("Version 1.0.0") },
+                supportingContent = { Text("Version 2.0.0") },
                 leadingContent = { Icon(Icons.Default.Info, null) }
             )
         }
+    }
+
+    // Morning Time Picker Dialog
+    if (showMorningTimeDialog) {
+        MorningTimePickerDialog(
+            initialHour = uiState.morningHour,
+            initialMinute = uiState.morningMinute,
+            onConfirm = { hour, minute ->
+                viewModel.setMorningTime(hour, minute)
+                showMorningTimeDialog = false
+            },
+            onDismiss = { showMorningTimeDialog = false }
+        )
     }
 
     // Work Hours Dialog
@@ -197,6 +212,60 @@ fun SettingsScreen(
             onDismiss = { showExitDistanceDialog = false }
         )
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MorningTimePickerDialog(
+    initialHour: Int,
+    initialMinute: Int,
+    onConfirm: (Int, Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val timePickerState = rememberTimePickerState(
+        initialHour = initialHour,
+        initialMinute = initialMinute,
+        is24Hour = false
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Morning Prompt Time") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "When should AutoMate ask if you're going to work?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                TimePicker(
+                    state = timePickerState,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onConfirm(timePickerState.hour, timePickerState.minute)
+            }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+private fun formatTime(hour: Int, minute: Int): String {
+    val period = if (hour < 12) "AM" else "PM"
+    val displayHour = when {
+        hour == 0 -> 12
+        hour > 12 -> hour - 12
+        else -> hour
+    }
+    return "$displayHour:${String.format("%02d", minute)} $period"
 }
 
 private fun formatHoursAndMinutes(hours: Long): String {

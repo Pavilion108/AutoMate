@@ -20,6 +20,8 @@ import javax.inject.Inject
 data class SettingsUiState(
     val workHours: Float = 8.5f,
     val morningPromptEnabled: Boolean = true,
+    val morningHour: Int = 7,
+    val morningMinute: Int = 30,
     val geofenceRadius: Float = 200f,
     val exitWatchDistance: Float = 50f
 )
@@ -42,21 +44,25 @@ class SettingsViewModel @Inject constructor(
             val prefs = context.getSharedPreferences("automate_prefs", Context.MODE_PRIVATE)
             val workHours = prefs.getFloat("work_hours", 8.5f)
             val morningPrompt = prefs.getBoolean("morning_prompt_enabled", true)
+            val morningHour = prefs.getInt("morning_hour", 7)
+            val morningMinute = prefs.getInt("morning_minute", 30)
             val geofenceRadius = prefs.getFloat("geofence_radius", 200f)
             val exitWatchDistance = prefs.getFloat("exit_watch_distance", 50f)
 
             _uiState.value = SettingsUiState(
                 workHours = workHours,
                 morningPromptEnabled = morningPrompt,
+                morningHour = morningHour,
+                morningMinute = morningMinute,
                 geofenceRadius = geofenceRadius,
                 exitWatchDistance = exitWatchDistance
             )
 
-            // Sync work hours to VariableStore (store as STRING so toFloatOrNull works)
+            // Sync work hours to VariableStore
             variableStore.setVariable("work_duration_hours", workHours.toString(), "STRING")
 
             if (morningPrompt) {
-                scheduleMorningPrompt()
+                scheduleMorningPrompt(morningHour, morningMinute)
             }
         }
     }
@@ -67,6 +73,23 @@ class SettingsViewModel @Inject constructor(
             val prefs = context.getSharedPreferences("automate_prefs", Context.MODE_PRIVATE)
             prefs.edit().putFloat("work_hours", hours).apply()
             variableStore.setVariable("work_duration_hours", hours.toString(), "STRING")
+        }
+    }
+
+    fun setMorningTime(hour: Int, minute: Int) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(morningHour = hour, morningMinute = minute)
+            val prefs = context.getSharedPreferences("automate_prefs", Context.MODE_PRIVATE)
+            prefs.edit()
+                .putInt("morning_hour", hour)
+                .putInt("morning_minute", minute)
+                .apply()
+
+            // Reschedule alarm with new time
+            if (_uiState.value.morningPromptEnabled) {
+                cancelMorningPrompt()
+                scheduleMorningPrompt(hour, minute)
+            }
         }
     }
 
@@ -84,7 +107,7 @@ class SettingsViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(exitWatchDistance = distance)
             val prefs = context.getSharedPreferences("automate_prefs", Context.MODE_PRIVATE)
             prefs.edit().putFloat("exit_watch_distance", distance).apply()
-            variableStore.setVariable("exit_watch_distance", distance.toInt().toString(), "INTEGER")
+            variableStore.setVariable("exit_watch_distance", distance.toInt().toString(), "STRING")
         }
     }
 
@@ -97,14 +120,14 @@ class SettingsViewModel @Inject constructor(
             prefs.edit().putBoolean("morning_prompt_enabled", newState).apply()
 
             if (newState) {
-                scheduleMorningPrompt()
+                scheduleMorningPrompt(_uiState.value.morningHour, _uiState.value.morningMinute)
             } else {
                 cancelMorningPrompt()
             }
         }
     }
 
-    private fun scheduleMorningPrompt() {
+    private fun scheduleMorningPrompt(hour: Int, minute: Int) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, GeofenceBroadcastReceiver::class.java).apply {
             action = "MORNING_PROMPT"
@@ -115,17 +138,15 @@ class SettingsViewModel @Inject constructor(
         )
 
         val calendar = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 7)
-            set(Calendar.MINUTE, 30)
+            set(Calendar.HOUR_OF_DAY, hour)
+            set(Calendar.MINUTE, minute)
             set(Calendar.SECOND, 0)
 
-            // Skip weekends (Saturday=7, Sunday=1)
+            // Skip weekends
             val dayOfWeek = get(Calendar.DAY_OF_WEEK)
             if (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY) {
-                // Jump to next Monday
                 add(Calendar.DAY_OF_YEAR, if (dayOfWeek == Calendar.SATURDAY) 2 else 1)
             } else if (timeInMillis <= System.currentTimeMillis()) {
-                // Already past 7:30 today, schedule for tomorrow (skip weekend)
                 add(Calendar.DAY_OF_YEAR, 1)
                 val nextDay = get(Calendar.DAY_OF_WEEK)
                 if (nextDay == Calendar.SATURDAY) add(Calendar.DAY_OF_YEAR, 2)
