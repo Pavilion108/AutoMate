@@ -42,12 +42,12 @@ class SettingsViewModel @Inject constructor(
     private fun loadSettings() {
         viewModelScope.launch {
             val prefs = context.getSharedPreferences("automate_prefs", Context.MODE_PRIVATE)
-            val workHours = prefs.getFloat("work_hours", 8.5f)
+            val workHours = safeGetFloat(prefs, "work_hours", 8.5f)
             val morningPrompt = prefs.getBoolean("morning_prompt_enabled", true)
             val morningHour = prefs.getInt("morning_hour", 7)
             val morningMinute = prefs.getInt("morning_minute", 30)
-            val geofenceRadius = prefs.getFloat("geofence_radius", 200f)
-            val exitWatchDistance = prefs.getFloat("exit_watch_distance", 50f)
+            val geofenceRadius = safeGetFloat(prefs, "geofence_radius", 200f)
+            val exitWatchDistance = safeGetFloat(prefs, "exit_watch_distance", 50f)
 
             _uiState.value = SettingsUiState(
                 workHours = workHours,
@@ -160,6 +160,16 @@ class SettingsViewModel @Inject constructor(
             AlarmManager.INTERVAL_DAY,
             pendingIntent
         )
+    }
+
+    private fun safeGetFloat(prefs: android.content.SharedPreferences, key: String, default: Float): Float {
+        return try {
+            prefs.getFloat(key, default)
+        } catch (e: ClassCastException) {
+            val intVal = prefs.getInt(key, default.toInt())
+            prefs.edit().putFloat(key, intVal.toFloat()).apply()
+            intVal.toFloat()
+        }
     }
 
     private fun cancelMorningPrompt() {
