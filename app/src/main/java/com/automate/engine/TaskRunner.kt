@@ -23,7 +23,8 @@ class TaskRunner @Inject constructor(
     @ApplicationContext private val context: Context,
     private val actionExecutor: ActionExecutor,
     private val variableStore: VariableStore,
-    private val triggerManagerProvider: dagger.Lazy<TriggerManager>
+    private val triggerManagerProvider: dagger.Lazy<TriggerManager>,
+    private val metroTicketFlow: com.automate.profiles.metro.MetroTicketFlow
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var notificationId = 2000
@@ -695,6 +696,16 @@ class TaskRunner @Inject constructor(
 
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(notificationId++, notification)
+    }
+
+    // === Metro Ticket Flow ===
+
+    fun startMetroTicketFlow() {
+        metroTicketFlow.start()
+    }
+
+    fun cancelMetroTicketFlow() {
+        metroTicketFlow.cancel()
     }
 
     fun cancelAllJobs() {

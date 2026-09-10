@@ -159,4 +159,8 @@ class DashboardViewModel @Inject constructor(
     fun performTimeOut() {
         taskRunner.performTimeOut()
     }
+
+    fun startMetroTicketBooking() {
+        taskRunner.startMetroTicketFlow()
+    }
 }

@@ -28,6 +28,7 @@ fun DashboardScreen(
     onNavigateToGeofenceManager: () -> Unit,
     onNavigateToAccounts: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToMetroTicket: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -96,11 +97,25 @@ fun DashboardScreen(
                         label = "Time Out",
                         onClick = { viewModel.performTimeOut() }
                     )
+                }
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     QuickActionButton(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Default.LocationOn,
                         label = "Locations",
                         onClick = onNavigateToGeofenceManager
+                    )
+                    QuickActionButton(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Default.ConfirmationNumber,
+                        label = "Metro Ticket",
+                        onClick = onNavigateToMetroTicket
                     )
                 }
             }

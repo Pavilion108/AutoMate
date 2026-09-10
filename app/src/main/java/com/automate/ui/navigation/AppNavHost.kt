@@ -10,6 +10,7 @@ import com.automate.ui.geofencemanager.GeofenceManagerScreen
 import com.automate.ui.accounts.AccountsScreen
 import com.automate.ui.settings.SettingsScreen
 import com.automate.ui.setup.SetupWizardScreen
+import com.automate.ui.metro.MetroTicketSettingsScreen
 
 sealed class Screen(val route: String) {
     data object Dashboard : Screen("dashboard")
@@ -20,6 +21,7 @@ sealed class Screen(val route: String) {
     data object Accounts : Screen("accounts")
     data object Settings : Screen("settings")
     data object Setup : Screen("setup")
+    data object MetroTicket : Screen("metro_ticket")
 }
 
 @Composable
@@ -41,6 +43,9 @@ fun AppNavHost(navController: NavHostController) {
                 },
                 onNavigateToSettings = {
                     navController.navigate(Screen.Settings.route)
+                },
+                onNavigateToMetroTicket = {
+                    navController.navigate(Screen.MetroTicket.route)
                 }
             )
         }
@@ -77,6 +82,16 @@ fun AppNavHost(navController: NavHostController) {
                     navController.navigate(Screen.Dashboard.route) {
                         popUpTo(Screen.Setup.route) { inclusive = true }
                     }
+                }
+            )
+        }
+
+        composable(Screen.MetroTicket.route) {
+            MetroTicketSettingsScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToBooking = {
+                    // Navigate back to dashboard and trigger booking
+                    navController.popBackStack()
                 }
             )
         }

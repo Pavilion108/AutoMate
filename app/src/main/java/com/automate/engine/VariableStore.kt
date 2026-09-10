@@ -89,6 +89,22 @@ class VariableStore @Inject constructor(
         setVariable("time_in_lng", lng.toString(), "STRING")
     }
 
+    // Predefined variables for metro ticket booking
+    suspend fun getMetroBotNumber(): String = getStringVariable("metro_bot_number").ifEmpty { com.automate.profiles.metro.MetroTicketProfile.DEFAULT_BOT_NUMBER }
+    suspend fun setMetroBotNumber(number: String) = setVariable("metro_bot_number", number, "STRING")
+
+    suspend fun getMetroSourceStation(): String = getStringVariable("metro_source_station").ifEmpty { com.automate.profiles.metro.MetroTicketProfile.DEFAULT_SOURCE }
+    suspend fun setMetroSourceStation(station: String) = setVariable("metro_source_station", station, "STRING")
+
+    suspend fun getMetroDestStation(): String = getStringVariable("metro_dest_station").ifEmpty { com.automate.profiles.metro.MetroTicketProfile.DEFAULT_DESTINATION }
+    suspend fun setMetroDestStation(station: String) = setVariable("metro_dest_station", station, "STRING")
+
+    suspend fun getMetroTripType(): String = getStringVariable("metro_trip_type").ifEmpty { com.automate.profiles.metro.MetroTicketProfile.DEFAULT_TRIP_TYPE }
+    suspend fun setMetroTripType(type: String) = setVariable("metro_trip_type", type, "STRING")
+
+    suspend fun isMetroBookingActive(): Boolean = getBooleanVariable("metro_booking_active")
+    suspend fun setMetroBookingActive(active: Boolean) = setBooleanVariable("metro_booking_active", active)
+
     companion object {
         private const val TAG = "VariableStore"
     }
