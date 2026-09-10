@@ -66,7 +66,7 @@ object BeehiveProfile {
                 type = ActionType.LAUNCH_APP,
                 packageName = PACKAGE_NAME
             ),
-            Action(type = ActionType.WAIT, seconds = 3),
+            Action(type = ActionType.WAIT, seconds = 1),
 
             // Step 2: Click SIGN IN if visible
             Action(
@@ -74,7 +74,7 @@ object BeehiveProfile {
                 target = "SIGN IN",
                 retryOnFailure = false
             ),
-            Action(type = ActionType.WAIT, seconds = 2),
+            Action(type = ActionType.WAIT, seconds = 1),
 
             // Step 3: Click TIME IN
             Action(
@@ -82,13 +82,13 @@ object BeehiveProfile {
                 target = "TIME IN",
                 retryOnFailure = false
             ),
-            Action(type = ActionType.WAIT, seconds = 2),
+            Action(type = ActionType.WAIT, seconds = 1),
 
             // Step 4: Smart popup handling - keep trying until success
             Action(
                 type = ActionType.POPUP_HANDLER,
-                maxRetries = 60,
-                retryDelayMs = 2000,
+                maxRetries = 30,
+                retryDelayMs = 1000,
                 popupDismissTexts = listOf("OK", "CLOSE", "Allow", "ALLOW", "Got it", "DISMISS"),
                 successIndicator = "Time In recorded"
             ),
@@ -108,32 +108,41 @@ object BeehiveProfile {
                 type = ActionType.LAUNCH_APP,
                 packageName = PACKAGE_NAME
             ),
-            Action(type = ActionType.WAIT, seconds = 3),
+            Action(type = ActionType.WAIT, seconds = 1),
 
-            // Step 2: Click TIME OUT
+            // Step 2: Click SIGN IN if needed (session may have expired)
+            Action(
+                type = ActionType.CLICK_ELEMENT,
+                target = "SIGN IN",
+                retryOnFailure = true,
+                maxRetries = 3
+            ),
+            Action(type = ActionType.WAIT, seconds = 1),
+
+            // Step 3: Click TIME OUT
             Action(
                 type = ActionType.CLICK_ELEMENT,
                 target = "TIME OUT",
                 retryOnFailure = false
             ),
-            Action(type = ActionType.WAIT, seconds = 2),
+            Action(type = ActionType.WAIT, seconds = 1),
 
-            // Step 3: Smart popup handling
+            // Step 4: Smart popup handling
             Action(
                 type = ActionType.POPUP_HANDLER,
                 maxRetries = 30,
-                retryDelayMs = 2000,
+                retryDelayMs = 1000,
                 popupDismissTexts = listOf("OK", "CLOSE", "Allow", "ALLOW", "Got it", "DISMISS"),
                 successIndicator = "Time Out recorded"
             ),
 
-            // Step 4: Close the app
+            // Step 5: Close the app
             Action(
                 type = ActionType.GLOBAL_ACTION,
                 globalActionType = "home"
             ),
 
-            // Step 5: Reset variables
+            // Step 6: Reset variables
             Action(
                 type = ActionType.SET_VARIABLE,
                 variableName = "timed_in_today",
@@ -150,7 +159,7 @@ object BeehiveProfile {
                 variableValue = "false"
             ),
 
-            // Step 6: Show notification
+            // Step 7: Show notification
             Action(
                 type = ActionType.SHOW_NOTIFICATION,
                 title = "Time-Out Recorded",

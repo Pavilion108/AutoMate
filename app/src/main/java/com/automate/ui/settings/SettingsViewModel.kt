@@ -52,8 +52,8 @@ class SettingsViewModel @Inject constructor(
                 exitWatchDistance = exitWatchDistance
             )
 
-            // Sync work hours to VariableStore
-            variableStore.setVariable("work_duration_hours", workHours.toInt().toString(), "INTEGER")
+            // Sync work hours to VariableStore (store as STRING so toFloatOrNull works)
+            variableStore.setVariable("work_duration_hours", workHours.toString(), "STRING")
 
             if (morningPrompt) {
                 scheduleMorningPrompt()
@@ -66,7 +66,7 @@ class SettingsViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(workHours = hours)
             val prefs = context.getSharedPreferences("automate_prefs", Context.MODE_PRIVATE)
             prefs.edit().putFloat("work_hours", hours).apply()
-            variableStore.setVariable("work_duration_hours", hours.toInt().toString(), "INTEGER")
+            variableStore.setVariable("work_duration_hours", hours.toString(), "STRING")
         }
     }
 
@@ -118,8 +118,18 @@ class SettingsViewModel @Inject constructor(
             set(Calendar.HOUR_OF_DAY, 7)
             set(Calendar.MINUTE, 30)
             set(Calendar.SECOND, 0)
-            if (timeInMillis <= System.currentTimeMillis()) {
+
+            // Skip weekends (Saturday=7, Sunday=1)
+            val dayOfWeek = get(Calendar.DAY_OF_WEEK)
+            if (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY) {
+                // Jump to next Monday
+                add(Calendar.DAY_OF_YEAR, if (dayOfWeek == Calendar.SATURDAY) 2 else 1)
+            } else if (timeInMillis <= System.currentTimeMillis()) {
+                // Already past 7:30 today, schedule for tomorrow (skip weekend)
                 add(Calendar.DAY_OF_YEAR, 1)
+                val nextDay = get(Calendar.DAY_OF_WEEK)
+                if (nextDay == Calendar.SATURDAY) add(Calendar.DAY_OF_YEAR, 2)
+                else if (nextDay == Calendar.SUNDAY) add(Calendar.DAY_OF_YEAR, 1)
             }
         }
 

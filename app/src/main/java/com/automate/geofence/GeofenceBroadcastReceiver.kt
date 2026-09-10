@@ -56,10 +56,10 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 taskRunner.performTimeOut()
             }
 
-            // Refresh location
+            // Refresh location — force immediate GPS fix
             "com.automate.REFRESH_LOCATION" -> {
                 scope.launch {
-                    triggerManager.startLocationTracking()
+                    triggerManager.forceLocationUpdate()
                 }
             }
 
@@ -124,7 +124,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                         triggerManager.enableGeofences()
                         Log.i(TAG, "Geofences enabled")
                         triggerManager.startLocationTracking()
-                        Log.i(TAG, "Location tracking started")
+                        Log.i(TAG, "Aggressive location tracking started (3s)")
                         Log.i(TAG, "Test setup complete")
                     } catch (e: Exception) {
                         Log.e(TAG, "Test setup failed", e)

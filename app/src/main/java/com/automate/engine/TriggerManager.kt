@@ -38,6 +38,7 @@ class TriggerManager @Inject constructor(
 
     private var lastKnownLocation: Pair<Double, Double>? = null
     private var locationCallback: LocationCallback? = null
+    private var isTracking = false
 
     // === Geofence Management ===
 
@@ -78,7 +79,7 @@ class TriggerManager @Inject constructor(
                 Geofence.GEOFENCE_TRANSITION_ENTER or
                 Geofence.GEOFENCE_TRANSITION_EXIT
             )
-            .setNotificationResponsiveness(300_000) // 5 minutes for battery
+            .setNotificationResponsiveness(10_000) // 10 seconds — fast detection
             .build()
 
         val request = GeofencingRequest.Builder()
@@ -111,20 +112,26 @@ class TriggerManager @Inject constructor(
         return id
     }
 
-    // === Location Tracking ===
+    // === Location Tracking (Aggressive: 3-second intervals) ===
 
     fun startLocationTracking() {
         if (!hasLocationPermission()) return
+        if (isTracking) {
+            Log.d(TAG, "Location tracking already active")
+            return
+        }
 
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 10000)
-            .setMinUpdateDistanceMeters(10f)
-            .setMinUpdateIntervalMillis(5000)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000)
+            .setMinUpdateDistanceMeters(0f) // Report every update
+            .setMinUpdateIntervalMillis(2000) // Fastest interval 2s
+            .setWaitForAccurateLocation(false)
             .build()
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 result.lastLocation?.let { location ->
                     lastKnownLocation = Pair(location.latitude, location.longitude)
+                    Log.d(TAG, "Location update: ${location.latitude}, ${location.longitude} (accuracy: ${location.accuracy}m)")
                     scope.launch {
                         checkDistanceFromTimeInLocation(location)
                     }
@@ -133,7 +140,8 @@ class TriggerManager @Inject constructor(
         }
 
         fusedLocationClient.requestLocationUpdates(request, locationCallback!!, Looper.getMainLooper())
-        Log.i(TAG, "Location tracking started")
+        isTracking = true
+        Log.i(TAG, "Aggressive location tracking started (3s interval)")
     }
 
     fun stopLocationTracking() {
@@ -141,8 +149,48 @@ class TriggerManager @Inject constructor(
             fusedLocationClient.removeLocationUpdates(it)
         }
         locationCallback = null
+        isTracking = false
         Log.i(TAG, "Location tracking stopped")
     }
+
+    // === Force Immediate GPS Fix ===
+
+    fun forceLocationUpdate() {
+        if (!hasLocationPermission()) return
+
+        Log.i(TAG, "Forcing immediate GPS location update")
+
+        // Strategy 1: Request a single high-accuracy location immediately
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 0)
+            .setMaxUpdates(1) // Only one update, then stop
+            .setWaitForAccurateLocation(false)
+            .build()
+
+        val callback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                result.lastLocation?.let { location ->
+                    lastKnownLocation = Pair(location.latitude, location.longitude)
+                    Log.i(TAG, "Forced location update: ${location.latitude}, ${location.longitude}")
+                }
+                fusedLocationClient.removeLocationUpdates(this)
+            }
+        }
+
+        fusedLocationClient.requestLocationUpdates(request, callback, Looper.getMainLooper())
+
+        // Also trigger a network-based location as backup
+        try {
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                if (location != null) {
+                    lastKnownLocation = Pair(location.latitude, location.longitude)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "lastLocation fallback failed", e)
+        }
+    }
+
+    // === Distance-based Exit Detection ===
 
     private suspend fun checkDistanceFromTimeInLocation(currentLocation: Location) {
         val timeInLocation = variableStore.getTimeInLocation() ?: return
@@ -161,7 +209,7 @@ class TriggerManager @Inject constructor(
         // If user is more than exit_watch_distance away, trigger time-out
         val exitDistance = variableStore.getVariable("exit_watch_distance")?.toFloatOrNull() ?: 50f
         if (distance > exitDistance) {
-            Log.i(TAG, "User left office area (${distance}m away), triggering time-out")
+            Log.i(TAG, "User left office area (${distance}m away, threshold: ${exitDistance}m), triggering time-out")
             taskRunner.performTimeOut()
         }
     }
@@ -171,6 +219,9 @@ class TriggerManager @Inject constructor(
     private fun hasLocationPermission(): Boolean {
         return ContextCompat.checkSelfPermission(
             context, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED ||
+        ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
     }
 
@@ -188,7 +239,10 @@ class TriggerManager @Inject constructor(
                 lastKnownLocation = loc
                 loc
             } else {
-                null
+                // Force a fresh location if last known is null
+                forceLocationUpdate()
+                delay(2000)
+                lastKnownLocation
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get last known location", e)

@@ -37,10 +37,14 @@ object DatabaseModule {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
 
-                // Seed geofence
+                // Seed geofences
                 db.execSQL("""
                     INSERT INTO geofence_locations (name, latitude, longitude, radiusMeters)
                     VALUES ('DKC Office', 19.126812, 72.838510, 200.0)
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO geofence_locations (name, latitude, longitude, radiusMeters)
+                    VALUES ('Aurion Pro', 19.145259, 73.006485, 200.0)
                 """.trimIndent())
 
                 // Seed variables
@@ -49,8 +53,8 @@ object DatabaseModule {
                     Triple("timed_in_today", "false", "BOOLEAN"),
                     Triple("exit_watch", "false", "BOOLEAN"),
                     Triple("going_to_work", "false", "BOOLEAN"),
-                    Triple("work_duration_hours", "8.5", "INTEGER"),
-                    Triple("exit_watch_distance", "50", "INTEGER")
+                    Triple("work_duration_hours", "8.5", "STRING"),
+                    Triple("exit_watch_distance", "50", "STRING")
                 )
                 for ((name, value, type) in variables) {
                     val cv = ContentValues().apply {
