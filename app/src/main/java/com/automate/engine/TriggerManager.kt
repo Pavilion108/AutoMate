@@ -53,6 +53,49 @@ class TriggerManager @Inject constructor(
             addGeofence(location)
         }
         Log.i(TAG, "Enabled ${locations.size} geofences")
+
+        // CRITICAL FALLBACK: Check if user is ALREADY inside a geofence
+        // Google Play Services INITIAL_TRIGGER_ENTER is unreliable —
+        // sometimes doesn't fire when geofences are added while user is inside.
+        checkIfAlreadyInsideGeofence(locations)
+    }
+
+    private suspend fun checkIfAlreadyInsideGeofence(locations: List<GeofenceLocationEntity>) {
+        val currentLocation = getLastKnownLocation() ?: run {
+            Log.w(TAG, "Cannot check geofence — no location available")
+            return
+        }
+
+        val armed = variableStore.isArmed()
+        val timedInToday = variableStore.isTimedInToday()
+
+        Log.i(TAG, "Checking if already inside geofence: current=${currentLocation.first},${currentLocation.second}, armed=$armed, timedIn=$timedInToday")
+
+        if (!armed || timedInToday) {
+            Log.d(TAG, "Not armed or already timed in, skipping geofence check")
+            return
+        }
+
+        for (location in locations) {
+            val geofenceLoc = Location("").apply {
+                latitude = location.latitude
+                longitude = location.longitude
+            }
+            val current = Location("").apply {
+                latitude = currentLocation.first
+                longitude = currentLocation.second
+            }
+            val distance = current.distanceTo(geofenceLoc)
+            Log.i(TAG, "Distance to '${location.name}': ${distance}m (radius: ${location.radiusMeters}m)")
+
+            if (distance <= location.radiusMeters) {
+                Log.i(TAG, "User is INSIDE geofence '${location.name}' — triggering time-in directly!")
+                taskRunner.startTimeInFlow()
+                return
+            }
+        }
+
+        Log.i(TAG, "User is outside all geofences — will wait for ENTER transition")
     }
 
     fun disableGeofences() {
@@ -133,6 +176,10 @@ class TriggerManager @Inject constructor(
                     lastKnownLocation = Pair(location.latitude, location.longitude)
                     Log.d(TAG, "Location update: ${location.latitude}, ${location.longitude} (accuracy: ${location.accuracy}m)")
                     scope.launch {
+                        // HYBRID: Check both ENTRY and EXIT on every GPS update
+                        // This makes the 3s GPS watcher the primary trigger,
+                        // with Google Play geofences as backup only
+                        checkGeofenceEntry(location)
                         checkDistanceFromTimeInLocation(location)
                     }
                 }
@@ -187,6 +234,42 @@ class TriggerManager @Inject constructor(
             }
         } catch (e: Exception) {
             Log.w(TAG, "lastLocation fallback failed", e)
+        }
+    }
+
+    // === Aggressive GPS-based Geofence Entry Detection (3-second checks) ===
+
+    private var lastGeofenceEntryCheck = 0L
+    private val GEOFENCE_ENTRY_COOLDOWN_MS = 30_000L // Don't re-trigger within 30s
+
+    private suspend fun checkGeofenceEntry(currentLocation: Location) {
+        val armed = variableStore.isArmed()
+        val timedInToday = variableStore.isTimedInToday()
+        if (!armed || timedInToday) return
+
+        // Cooldown — don't spam checks
+        val now = System.currentTimeMillis()
+        if (now - lastGeofenceEntryCheck < GEOFENCE_ENTRY_COOLDOWN_MS) return
+        lastGeofenceEntryCheck = now
+
+        val locations = try {
+            geofenceLocationDao.getAllLocations().first()
+        } catch (e: Exception) {
+            return
+        }
+
+        for (geofenceLoc in locations) {
+            val target = Location("").apply {
+                latitude = geofenceLoc.latitude
+                longitude = geofenceLoc.longitude
+            }
+            val distance = currentLocation.distanceTo(target)
+
+            if (distance <= geofenceLoc.radiusMeters) {
+                Log.i(TAG, "GPS ENTRY detected: ${distance}m from '${geofenceLoc.name}' (radius: ${geofenceLoc.radiusMeters}m)")
+                taskRunner.startTimeInFlow()
+                return
+            }
         }
     }
 

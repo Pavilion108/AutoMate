@@ -98,8 +98,10 @@ class TaskRunner @Inject constructor(
             if (goingToWork) {
                 Log.i(TAG, "User is going to work - enabling geofence monitoring")
                 variableStore.setArmed(true)
-                triggerManagerProvider.get().enableGeofences()
+                // CRITICAL: Start GPS tracking FIRST so location is available
+                // when enableGeofences checks if user is already inside
                 triggerManagerProvider.get().startLocationTracking()
+                triggerManagerProvider.get().enableGeofences()
                 showStatusNotification("Going to work", "Monitoring your location for check-in")
 
                 // Schedule metro prompt after configurable delay (default 1 hour)
