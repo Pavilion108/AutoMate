@@ -482,26 +482,24 @@ class TaskRunner @Inject constructor(
         return false
     }
 
-    // === Time-Out Prompt Scheduling (7h ask, 8.5h ask again) ===
+    // === Time-Out Prompt Scheduling (uses work_hours setting) ===
 
     private fun scheduleTimeOutPrompts() {
         timeOutJob?.cancel()
         timeOutJob = scope.launch {
-            // First prompt at 7 hours — ask if about to leave
-            val sevenHours = 7L * 60 * 60 * 1000
-            delay(sevenHours)
+            val workHours = variableStore.getVariable("work_duration_hours")?.toFloatOrNull()?.toLong() ?: 7L
+            val workHoursMs = workHours * 60 * 60 * 1000
 
-            Log.i(TAG, "7 hours elapsed, sending first time-out prompt")
+            delay(workHoursMs)
+            Log.i(TAG, "${workHours}h elapsed, sending first time-out prompt")
             sendTimeOutPrompt(firstPrompt = true)
 
-            // Second prompt at 8.5 hours total (1.5h after first prompt)
             val oneAndHalfHours = 1L * 60 * 60 * 1000 + 30 * 60 * 1000
             delay(oneAndHalfHours)
 
-            // If still timed in (user said "watch me" at 7h), send second prompt
             val stillTimedIn = variableStore.isTimedInToday()
             if (stillTimedIn) {
-                Log.i(TAG, "8.5 hours elapsed, sending second time-out prompt")
+                Log.i(TAG, "1.5h after ${workHours}h mark, sending second time-out prompt")
                 sendTimeOutPrompt(firstPrompt = false)
             }
         }
@@ -536,7 +534,7 @@ class TaskRunner @Inject constructor(
         )
 
         val title = if (firstPrompt) "About to leave?" else "Time to check out!"
-        val body = if (firstPrompt) "7h done. Leaving soon?" else "8.5h done. Ready to time-out?"
+        val body = if (firstPrompt) "Work hours done. Leaving soon?" else "Still here? Ready to time-out?"
 
         val notification = NotificationCompat.Builder(context, AutoMateApp.CHANNEL_MORNING_PROMPT)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
