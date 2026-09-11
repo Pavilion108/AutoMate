@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
+import android.os.Build
 import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -37,7 +38,6 @@ class TriggerManager @Inject constructor(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private var lastKnownLocation: Pair<Double, Double>? = null
-    private var locationCallback: LocationCallback? = null
     private var isTracking = false
 
     // === Geofence Management ===
@@ -155,7 +155,9 @@ class TriggerManager @Inject constructor(
         return id
     }
 
-    // === Location Tracking (Aggressive: 3-second intervals) ===
+    // === Location Tracking (Aggressive: 3-second intervals via Foreground Service) ===
+
+    private var locationBroadcastReceiver: android.content.BroadcastReceiver? = null
 
     fun startLocationTracking() {
         if (!hasLocationPermission()) return
@@ -164,38 +166,53 @@ class TriggerManager @Inject constructor(
             return
         }
 
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000)
-            .setMinUpdateDistanceMeters(0f) // Report every update
-            .setMinUpdateIntervalMillis(2000) // Fastest interval 2s
-            .setWaitForAccurateLocation(false)
-            .build()
-
-        locationCallback = object : LocationCallback() {
-            override fun onLocationResult(result: LocationResult) {
-                result.lastLocation?.let { location ->
-                    lastKnownLocation = Pair(location.latitude, location.longitude)
-                    Log.d(TAG, "Location update: ${location.latitude}, ${location.longitude} (accuracy: ${location.accuracy}m)")
-                    scope.launch {
-                        // HYBRID: Check both ENTRY and EXIT on every GPS update
-                        // This makes the 3s GPS watcher the primary trigger,
-                        // with Google Play geofences as backup only
-                        checkGeofenceEntry(location)
-                        checkDistanceFromTimeInLocation(location)
-                    }
+        // Register receiver for foreground service location updates
+        locationBroadcastReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: android.content.Intent) {
+                val lat = intent.getDoubleExtra("latitude", 0.0)
+                val lng = intent.getDoubleExtra("longitude", 0.0)
+                val accuracy = intent.getFloatExtra("accuracy", 0f)
+                val location = Location("").apply {
+                    latitude = lat
+                    longitude = lng
+                    this.accuracy = accuracy
+                }
+                lastKnownLocation = Pair(lat, lng)
+                scope.launch {
+                    checkGeofenceEntry(location)
+                    checkDistanceFromTimeInLocation(location)
                 }
             }
         }
+        val filter = android.content.IntentFilter(KeepAliveService.ACTION_LOCATION_UPDATE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(locationBroadcastReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(locationBroadcastReceiver, filter)
+        }
 
-        fusedLocationClient.requestLocationUpdates(request, locationCallback!!, Looper.getMainLooper())
+        // Start foreground location tracking via service (unthrottled 3s intervals)
+        val intent = android.content.Intent(context, KeepAliveService::class.java).apply {
+            action = KeepAliveService.ACTION_START_LOCATION_TRACKING
+        }
+        context.startForegroundService(intent)
+
         isTracking = true
-        Log.i(TAG, "Aggressive location tracking started (3s interval)")
+        Log.i(TAG, "Foreground location tracking delegated (3s interval)")
     }
 
     fun stopLocationTracking() {
-        locationCallback?.let {
-            fusedLocationClient.removeLocationUpdates(it)
+        // Stop foreground service location tracking
+        val intent = android.content.Intent(context, KeepAliveService::class.java).apply {
+            action = KeepAliveService.ACTION_STOP_LOCATION_TRACKING
         }
-        locationCallback = null
+        context.startService(intent)
+
+        // Unregister receiver
+        locationBroadcastReceiver?.let {
+            try { context.unregisterReceiver(it) } catch (_: Exception) {}
+        }
+        locationBroadcastReceiver = null
         isTracking = false
         Log.i(TAG, "Location tracking stopped")
     }

@@ -8,13 +8,22 @@ import android.app.Service
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.location.Location
 import android.os.Build
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import com.automate.AutoMateApp
 import com.automate.MainActivity
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import kotlinx.coroutines.*
 
 class KeepAliveService : Service() {
@@ -24,13 +33,20 @@ class KeepAliveService : Service() {
     private var rebindAttempts = 0
     private var wakeLock: PowerManager.WakeLock? = null
 
+    // Foreground location tracking (3-second intervals, unthrottled)
+    private var fusedLocationClient: FusedLocationProviderClient? = null
+    private var locationCallback: LocationCallback? = null
+    private var isLocationTracking = false
+    private var locationUpdateListener: ((Location) -> Unit)? = null
+
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "KeepAliveService created")
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification())
+        startForeground(NOTIFICATION_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         acquireWakeLock()
         startWatchdog()
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -38,15 +54,63 @@ class KeepAliveService : Service() {
         when (intent?.action) {
             ACTION_REBIND_ACCESSIBILITY -> attemptRebind()
             ACTION_CHECK_AND_REBIND -> attemptRebind()
+            ACTION_START_LOCATION_TRACKING -> startForegroundLocationTracking()
+            ACTION_STOP_LOCATION_TRACKING -> stopForegroundLocationTracking()
         }
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    // === Foreground Location Tracking (3-second intervals, unthrottled) ===
+
+    private fun startForegroundLocationTracking() {
+        if (isLocationTracking) {
+            Log.d(TAG, "Foreground location tracking already active")
+            return
+        }
+
+        @Suppress("MissingPermission")
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000)
+            .setMinUpdateDistanceMeters(0f)
+            .setMinUpdateIntervalMillis(2000)
+            .setWaitForAccurateLocation(false)
+            .build()
+
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                result.lastLocation?.let { location ->
+                    Log.d(TAG, "Foreground GPS: ${location.latitude}, ${location.longitude} (acc: ${location.accuracy}m)")
+                    val broadcastIntent = Intent(ACTION_LOCATION_UPDATE).apply {
+                        putExtra("latitude", location.latitude)
+                        putExtra("longitude", location.longitude)
+                        putExtra("accuracy", location.accuracy)
+                        setPackage(packageName)
+                    }
+                    sendBroadcast(broadcastIntent)
+                }
+            }
+        }
+
+        @Suppress("MissingPermission")
+        fusedLocationClient?.requestLocationUpdates(request, locationCallback!!, Looper.getMainLooper())
+        isLocationTracking = true
+        Log.i(TAG, "Foreground location tracking started (3s interval)")
+    }
+
+    private fun stopForegroundLocationTracking() {
+        locationCallback?.let {
+            fusedLocationClient?.removeLocationUpdates(it)
+        }
+        locationCallback = null
+        isLocationTracking = false
+        Log.i(TAG, "Foreground location tracking stopped")
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         watchdogJob?.cancel()
+        stopForegroundLocationTracking()
         releaseWakeLock()
         scope.cancel()
         Log.w(TAG, "KeepAliveService destroyed! Will be restarted by system.")
@@ -315,6 +379,9 @@ class KeepAliveService : Service() {
         private const val WATCHDOG_INTERVAL_MS = 10_000L // Check every 10 seconds
         const val ACTION_REBIND_ACCESSIBILITY = "REBIND_ACCESSIBILITY"
         const val ACTION_CHECK_AND_REBIND = "CHECK_AND_REBIND"
+        const val ACTION_START_LOCATION_TRACKING = "START_LOCATION_TRACKING"
+        const val ACTION_STOP_LOCATION_TRACKING = "STOP_LOCATION_TRACKING"
+        const val ACTION_LOCATION_UPDATE = "com.automate.LOCATION_UPDATE"
 
         fun start(context: Context) {
             val intent = Intent(context, KeepAliveService::class.java)
