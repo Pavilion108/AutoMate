@@ -73,7 +73,7 @@
         <service
             android:name=".engine.KeepAliveService"
             android:exported="false"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse|location" />
 
         <!-- Boot Receiver - re-register geofences after reboot -->
         <receiver

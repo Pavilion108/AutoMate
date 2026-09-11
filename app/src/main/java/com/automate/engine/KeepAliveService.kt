@@ -10,7 +10,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
@@ -33,11 +36,11 @@ class KeepAliveService : Service() {
     private var rebindAttempts = 0
     private var wakeLock: PowerManager.WakeLock? = null
 
-    // Foreground location tracking (3-second intervals, unthrottled)
-    private var fusedLocationClient: FusedLocationProviderClient? = null
-    private var locationCallback: LocationCallback? = null
+    // Foreground GPS location tracking (true 3-second intervals)
+    private var locationManager: LocationManager? = null
+    private var gpsListener: LocationListener? = null
+    private var networkListener: LocationListener? = null
     private var isLocationTracking = false
-    private var locationUpdateListener: ((Location) -> Unit)? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -46,7 +49,6 @@ class KeepAliveService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         acquireWakeLock()
         startWatchdog()
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -62,7 +64,7 @@ class KeepAliveService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    // === Foreground Location Tracking (3-second intervals, unthrottled) ===
+    // === Foreground Location Tracking (true 3-second intervals via raw GPS) ===
 
     private fun startForegroundLocationTracking() {
         if (isLocationTracking) {
@@ -70,41 +72,54 @@ class KeepAliveService : Service() {
             return
         }
 
-        @Suppress("MissingPermission")
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000)
-            .setMinUpdateDistanceMeters(0f)
-            .setMinUpdateIntervalMillis(2000)
-            .setWaitForAccurateLocation(false)
-            .build()
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
-        locationCallback = object : LocationCallback() {
-            override fun onLocationResult(result: LocationResult) {
-                result.lastLocation?.let { location ->
-                    Log.d(TAG, "Foreground GPS: ${location.latitude}, ${location.longitude} (acc: ${location.accuracy}m)")
-                    val broadcastIntent = Intent(ACTION_LOCATION_UPDATE).apply {
-                        putExtra("latitude", location.latitude)
-                        putExtra("longitude", location.longitude)
-                        putExtra("accuracy", location.accuracy)
-                        setPackage(packageName)
-                    }
-                    sendBroadcast(broadcastIntent)
+        gpsListener = object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                Log.d(TAG, "Foreground GPS: ${location.latitude}, ${location.longitude} (acc: ${location.accuracy}m)")
+                val broadcastIntent = Intent(ACTION_LOCATION_UPDATE).apply {
+                    putExtra("latitude", location.latitude)
+                    putExtra("longitude", location.longitude)
+                    putExtra("accuracy", location.accuracy)
+                    setPackage(packageName)
                 }
+                sendBroadcast(broadcastIntent)
             }
+            @Deprecated("Deprecated in Java")
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
         }
 
+        // Raw GPS provider: true 3-second intervals, not batched
         @Suppress("MissingPermission")
-        fusedLocationClient?.requestLocationUpdates(request, locationCallback!!, Looper.getMainLooper())
+        locationManager?.requestLocationUpdates(
+            LocationManager.GPS_PROVIDER,
+            3000L, // 3 seconds
+            0f,    // no minimum distance
+            gpsListener!!
+        )
+
+        // Also request network location as backup for indoor
+        @Suppress("MissingPermission")
+        locationManager?.requestLocationUpdates(
+            LocationManager.NETWORK_PROVIDER,
+            3000L,
+            0f,
+            gpsListener!!
+        )
+
         isLocationTracking = true
-        Log.i(TAG, "Foreground location tracking started (3s interval)")
+        Log.i(TAG, "Foreground GPS location tracking started (raw GPS, true 3s interval)")
     }
 
     private fun stopForegroundLocationTracking() {
-        locationCallback?.let {
-            fusedLocationClient?.removeLocationUpdates(it)
-        }
-        locationCallback = null
+        gpsListener?.let { locationManager?.removeUpdates(it) }
+        networkListener?.let { locationManager?.removeUpdates(it) }
+        gpsListener = null
+        networkListener = null
         isLocationTracking = false
-        Log.i(TAG, "Foreground location tracking stopped")
+        Log.i(TAG, "Foreground GPS location tracking stopped")
     }
 
     override fun onDestroy() {
