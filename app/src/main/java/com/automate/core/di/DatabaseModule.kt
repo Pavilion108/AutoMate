@@ -54,7 +54,7 @@ object DatabaseModule {
                     Triple("exit_watch", "false", "BOOLEAN"),
                     Triple("going_to_work", "false", "BOOLEAN"),
                     Triple("work_duration_hours", "8.5", "STRING"),
-                    Triple("exit_watch_distance", "50", "STRING")
+                    Triple("exit_watch_distance", "150", "STRING")
                 )
                 for ((name, value, type) in variables) {
                     val cv = ContentValues().apply {

@@ -23,7 +23,7 @@ data class SettingsUiState(
     val morningHour: Int = 7,
     val morningMinute: Int = 30,
     val geofenceRadius: Float = 200f,
-    val exitWatchDistance: Float = 50f,
+    val exitWatchDistance: Float = 150f,
     val metroPromptDelayMinutes: Int = 60
 )
 
@@ -48,7 +48,7 @@ class SettingsViewModel @Inject constructor(
             val morningHour = prefs.getInt("morning_hour", 7)
             val morningMinute = prefs.getInt("morning_minute", 30)
             val geofenceRadius = safeGetFloat(prefs, "geofence_radius", 200f)
-            val exitWatchDistance = safeGetFloat(prefs, "exit_watch_distance", 50f)
+            val exitWatchDistance = safeGetFloat(prefs, "exit_watch_distance", 150f)
             val metroPromptDelay = prefs.getInt("metro_prompt_delay_minutes", 60)
 
             _uiState.value = SettingsUiState(

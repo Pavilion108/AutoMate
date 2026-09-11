@@ -273,26 +273,40 @@ class TriggerManager @Inject constructor(
         }
     }
 
-    // === Distance-based Exit Detection ===
+    // === Distance-based Exit Detection (measures from CLIENT LOCATION, not time-in point) ===
 
     private suspend fun checkDistanceFromTimeInLocation(currentLocation: Location) {
-        val timeInLocation = variableStore.getTimeInLocation() ?: return
         val exitWatch = variableStore.isExitWatch()
-
         if (!exitWatch) return
 
-        val timeInLoc = Location("").apply {
-            latitude = timeInLocation.first
-            longitude = timeInLocation.second
+        // Get the CLIENT LOCATION (geofence office location) — NOT the time-in GPS point
+        val locations = try {
+            geofenceLocationDao.getAllLocations().first()
+        } catch (e: Exception) {
+            return
+        }
+        if (locations.isEmpty()) return
+
+        // Check distance from the FIRST client location (primary office)
+        val clientLoc = locations.first()
+        val target = Location("").apply {
+            latitude = clientLoc.latitude
+            longitude = clientLoc.longitude
         }
 
-        val distance = currentLocation.distanceTo(timeInLoc)
-        Log.d(TAG, "Distance from time-in location: ${distance}m")
+        val distance = currentLocation.distanceTo(target)
+        Log.d(TAG, "Distance from client '${clientLoc.name}': ${distance}m (accuracy: ${currentLocation.accuracy}m)")
 
-        // If user is more than exit_watch_distance away, trigger time-out
-        val exitDistance = variableStore.getVariable("exit_watch_distance")?.toFloatOrNull() ?: 50f
+        // Only trigger if GPS accuracy is reasonable (< 100m) to avoid false triggers
+        if (currentLocation.accuracy > 100f) {
+            Log.d(TAG, "GPS accuracy too low (${currentLocation.accuracy}m), skipping exit check")
+            return
+        }
+
+        // If user is more than exit_watch_distance away from CLIENT LOCATION, trigger time-out
+        val exitDistance = variableStore.getVariable("exit_watch_distance")?.toFloatOrNull() ?: 150f
         if (distance > exitDistance) {
-            Log.i(TAG, "User left office area (${distance}m away, threshold: ${exitDistance}m), triggering time-out")
+            Log.i(TAG, "User left client area (${distance}m from '${clientLoc.name}', threshold: ${exitDistance}m), triggering time-out")
             taskRunner.performTimeOut()
         }
     }
