@@ -93,6 +93,12 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 taskRunner.sendMorningPrompt()
             }
 
+            // Schedule time-out prompts for manual time-in (when user clocked in outside app)
+            "SCHEDULE_TIMEOUT" -> {
+                Log.i(TAG, "Scheduling time-out prompts for manual time-in")
+                taskRunner.scheduleTimeOutPromptsForManualTimeIn()
+            }
+
             // Manual test: send metro prompt
             "TEST_METRO_PROMPT" -> {
                 Log.i(TAG, "Test mode: sending metro prompt")

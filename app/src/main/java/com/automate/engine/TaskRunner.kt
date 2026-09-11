@@ -484,6 +484,21 @@ class TaskRunner @Inject constructor(
 
     // === Time-Out Prompt Scheduling (uses work_hours setting) ===
 
+    fun scheduleTimeOutPromptsForManualTimeIn() {
+        scope.launch {
+            variableStore.setTimedInToday(true)
+            variableStore.setArmed(true)
+            variableStore.setGoingToWork(true)
+            scheduleTimeOutPrompts()
+            val workHours = variableStore.getVariable("work_duration_hours")?.toFloatOrNull() ?: 7f
+            Log.i(TAG, "Scheduled time-out prompts for manual time-in (${workHours}h)")
+            showStatusNotification(
+                "Time-Out Scheduled",
+                "Will prompt you at ${workHours}h mark. Leaving soon?"
+            )
+        }
+    }
+
     private fun scheduleTimeOutPrompts() {
         timeOutJob?.cancel()
         timeOutJob = scope.launch {
