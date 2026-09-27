@@ -5,6 +5,8 @@ import android.accessibilityservice.GestureDescription
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.graphics.Path
 import android.os.Bundle
 import android.provider.Settings
@@ -201,15 +203,20 @@ class AutoMateAccessibilityService : AccessibilityService() {
 
     private var stealthOverlay: View? = null
 
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+
     /**
-     * Briefly attaches a 1x1 fully transparent overlay.
+     * Attaches a 1x1 fully transparent overlay on the main thread and returns once it is
+     * actually attached.
      *
      * Android 10+ refuses background activity starts ("Abort background activity starts")
      * unless the calling app is visible. A window the app actually owns satisfies that
-     * visibility check, so attaching this for a moment around startActivity() is what makes
-     * the launch stick. MIUI rejects it even for a bound AccessibilityService, and a
-     * full-screen intent is only honoured while the screen is idle, so neither of those
-     * alone is enough.
+     * visibility check, so attaching this around startActivity() is what makes the launch
+     * stick. MIUI rejects the launch even for a bound AccessibilityService, and a
+     * full-screen intent is only honoured while the screen is idle, so neither alone works.
+     *
+     * WindowManager.addView must run on a thread with a prepared Looper; callers are on a
+     * coroutine dispatcher, so this hops to the main thread and waits for the result.
      */
     private fun attachStealthOverlay(): Boolean {
         if (stealthOverlay != null) return true
@@ -219,34 +226,44 @@ class AutoMateAccessibilityService : AccessibilityService() {
             null
         } ?: return false
 
-        val view = View(this)
-        val params = WindowManager.LayoutParams(
-            1,
-            1,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            android.graphics.PixelFormat.TRANSLUCENT
-        ).apply { alpha = 0.01f }
-
-        return try {
-            wm.addView(view, params)
-            stealthOverlay = view
-            true
-        } catch (e: Exception) {
-            Log.w(TAG, "stealth overlay attach failed: ${e.message}")
-            false
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var attached = false
+        mainHandler.post {
+            try {
+                val view = View(this)
+                val params = WindowManager.LayoutParams(
+                    1,
+                    1,
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    android.graphics.PixelFormat.TRANSLUCENT
+                ).apply { alpha = 0.01f }
+                wm.addView(view, params)
+                stealthOverlay = view
+                attached = true
+            } catch (e: Exception) {
+                Log.w(TAG, "stealth overlay attach failed: ${e.message}")
+            }
+            latch.countDown()
         }
+        try {
+            latch.await(3, java.util.concurrent.TimeUnit.SECONDS)
+        } catch (_: InterruptedException) {
+        }
+        return attached
     }
 
     private fun detachStealthOverlay() {
         val view = stealthOverlay ?: return
         stealthOverlay = null
-        try {
-            getSystemService(WindowManager::class.java)?.removeView(view)
-        } catch (_: Exception) {
+        mainHandler.post {
+            try {
+                getSystemService(WindowManager::class.java)?.removeView(view)
+            } catch (_: Exception) {
+            }
         }
     }
 

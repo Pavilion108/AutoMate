@@ -213,7 +213,9 @@ class TaskRunner @Inject constructor(
         // guaranteed we were in the background when the launch was rejected.
         var launched = false
         if (launchApp(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY, service)) {
-            launched = waitForForeground(BEEHIVE_PACKAGE, 3_000)
+            // Beehive is a NativeScript app and takes several seconds to cold start, so
+            // allow a generous window before declaring the launch a failure.
+            launched = waitForForeground(BEEHIVE_PACKAGE, 10_000)
             if (!launched) {
                 Log.w(TAG, "startActivity was dispatched but $BEEHIVE_PACKAGE never reached the foreground")
             }
