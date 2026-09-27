@@ -165,8 +165,11 @@ class AutoMateAccessibilityService : AccessibilityService() {
         exact: Boolean = true,
         excludeContaining: List<String> = emptyList()
     ): AccessibilityNodeInfo? {
-        val root = if (packageName != null) rootForPackage(packageName) else rootInActiveWindow
-            ?: return null
+        val root: AccessibilityNodeInfo = if (packageName != null) {
+            rootForPackage(packageName) ?: return null
+        } else {
+            rootInActiveWindow ?: return null
+        }
 
         val candidates = mutableListOf<AccessibilityNodeInfo>()
         collectActionable(root, text, exact, excludeContaining, candidates, 0)
