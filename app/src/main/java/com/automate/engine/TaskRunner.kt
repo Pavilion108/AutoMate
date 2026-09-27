@@ -640,7 +640,8 @@ class TaskRunner @Inject constructor(
                 val probe = service.findActionableNode("TIME IN", BEEHIVE_PACKAGE)
                     ?: service.findActionableNode("TIME IN", BEEHIVE_PACKAGE, exact = false)
                 if (probe != null) {
-                    val r = probe.boundsInScreen
+                    val r = android.graphics.Rect()
+                    probe.getBoundsInScreen(r)
                     Log.i(TAG, "DRY RUN: would tap TIME IN at ${r.centerX()},${r.centerY()} size=${r.width()}x${r.height()}")
                     showStatusNotification("Dry run", "Beehive ready. TIME IN is at ${r.centerX()},${r.centerY()}.")
                 } else {
