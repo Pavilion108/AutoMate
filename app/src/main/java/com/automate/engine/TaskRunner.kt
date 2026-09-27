@@ -36,6 +36,15 @@ class TaskRunner @Inject constructor(
     private var endOfDayCutoffJob: Job? = null
 
     companion object {
+        /**
+         * Verifies the full flow without submitting attendance. Set via the SET_DRY_RUN
+         * broadcast so a live account can be exercised safely.
+         */
+        @Volatile
+        var dryRun = false
+
+        fun isDryRun(): Boolean = dryRun
+
         private const val TAG = "TaskRunner"
         private const val BEEHIVE_PACKAGE = "com.app.beehivehrms"
         private const val BEEHIVE_ACTIVITY = "com.tns.NativeScriptActivity"
@@ -624,6 +633,23 @@ class TaskRunner @Inject constructor(
             // the "TIME IN" label while its bounds are still zero. Give it time and try
             // progressively looser matching before giving up.
             settleDashboard(service)
+
+            // Dry run proves the whole path — wake, launch, sign in, find the button —
+            // without submitting anything. Used for verification on a live account.
+            if (isDryRun()) {
+                val probe = service.findActionableNode("TIME IN", BEEHIVE_PACKAGE)
+                    ?: service.findActionableNode("TIME IN", BEEHIVE_PACKAGE, exact = false)
+                if (probe != null) {
+                    val r = probe.boundsInScreen
+                    Log.i(TAG, "DRY RUN: would tap TIME IN at ${r.centerX()},${r.centerY()} size=${r.width()}x${r.height()}")
+                    showStatusNotification("Dry run", "Beehive ready. TIME IN is at ${r.centerX()},${r.centerY()}.")
+                } else {
+                    Log.w(TAG, "DRY RUN: reached dashboard but TIME IN was not actionable")
+                    showStatusNotification("Dry run", "Reached dashboard, TIME IN not found.")
+                }
+                return@launch
+            }
+
             var clicked = false
             for (attempt in 1..6) {
                 val target = service.findActionableNode("TIME IN", BEEHIVE_PACKAGE)

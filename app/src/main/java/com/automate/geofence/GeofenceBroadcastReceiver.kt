@@ -121,6 +121,19 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 }
             }
 
+            // Dry-run switch: while set, the time-in flow stops at the dashboard and
+            // reports the button position instead of submitting attendance.
+            "SET_DRY_RUN" -> {
+                val on = intent.getBooleanExtra("on", false)
+                TaskRunner.dryRun = on
+                Log.i(TAG, "Dry run ${if (on) "ENABLED" else "disabled"}")
+            }
+
+            "DRY_RUN_TIME_IN" -> {
+                Log.i(TAG, "Dry run time-in requested")
+                taskRunner.startTimeIn()
+            }
+
             // Manual arm/disarm from the dashboard, or from a shortcut tile.
             "ARM_TODAY" -> {
                 Log.i(TAG, "Manual arm for today")
