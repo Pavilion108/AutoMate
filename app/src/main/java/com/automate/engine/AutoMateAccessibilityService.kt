@@ -318,37 +318,32 @@ class AutoMateAccessibilityService : AccessibilityService() {
      * dismissed this way by design; the caller gets false and reports it.
      */
     fun wakeAndUnlock(): Boolean {
-        var woke = false
+        var ok = false
         try {
-            val pm = getSystemService(PowerManager::class.java)
-            if (pm != null && !pm.isInteractive) {
-                @Suppress("DEPRECATION")
-                pm.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP, "automate:wake")
-                    .apply { setReferenceCounted(false); acquire(10_000) }
-                woke = true
-                Log.i(TAG, "wakeAndUnlock requested screen wake")
-            }
+            // Accessibility global actions are the only way to do this without an Activity:
+            // requestDismissKeyguard() requires one, and launching a throwaway Activity from
+            // the background is exactly the operation the platform refuses.
+            if (performGlobalAction(GLOBAL_ACTION_WAKEUP)) ok = true
         } catch (e: Exception) {
-            Log.w(TAG, "wake failed: ${e.message}")
+            Log.w(TAG, "GLOBAL_ACTION_WAKEUP failed: ${e.message}")
         }
 
-        // Give the system a moment to actually show the lock screen before asking to
-        // dismiss it, otherwise the request races the wake and silently fails.
-        Thread.sleep(1200)
+        Thread.sleep(1500)
 
-        var unlocked = false
         try {
             val km = getSystemService(KeyguardManager::class.java)
             if (km != null && km.isKeyguardLocked) {
-                unlocked = km.requestDismissKeyguard(null, null)
-                Log.i(TAG, "wakeAndUnlock requestDismissKeyguard=$unlocked")
+                // Only dismisses a non-secure lockscreen; a PIN cannot be cleared this way.
+                val dismissed = performGlobalAction(GLOBAL_ACTION_UNLOCK)
+                Log.i(TAG, "wakeAndUnlock wake=$ok unlock=$dismissed")
+                ok = ok || dismissed
             } else {
-                unlocked = true
+                Log.i(TAG, "wakeAndUnlock wake=$ok keyguardNotLocked=true")
             }
         } catch (e: Exception) {
-            Log.w(TAG, "dismiss keyguard failed: ${e.message}")
+            Log.w(TAG, "unlock failed: ${e.message}")
         }
-        return woke || unlocked
+        return ok
     }
 
     /**
