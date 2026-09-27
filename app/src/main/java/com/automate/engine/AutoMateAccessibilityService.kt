@@ -437,25 +437,49 @@ class AutoMateAccessibilityService : AccessibilityService() {
             )
         }
 
+        /**
+         * Two distinct states matter and must not be conflated:
+         *  - ENABLED: the user (or watchdog) turned the service on in the OS
+         *  - BOUND:   the framework has called onServiceConnected() and we can drive the UI
+         * Callers that need to tap the screen should check [isBound], not [isEnabled].
+         */
         fun isEnabled(context: Context): Boolean {
-            val serviceComponent = ComponentName(context, AutoMateAccessibilityService::class.java).flattenToShortString()
-            val enabledServices = Settings.Secure.getString(
-                context.contentResolver,
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-            ) ?: ""
-            if (enabledServices.contains(serviceComponent)) return true
-            try {
-                val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
-                val enabledServicesList = am.getEnabledAccessibilityServiceList(
-                    android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_GENERIC
+            val serviceComponent = ComponentName(context, AutoMateAccessibilityService::class.java)
+
+            val enabledServices = try {
+                Settings.Secure.getString(
+                    context.contentResolver,
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
                 )
-                for (serviceInfo in enabledServicesList) {
-                    if (serviceInfo.resolveInfo.serviceInfo?.packageName == context.packageName) {
-                        return true
-                    }
+            } catch (_: SecurityException) {
+                null
+            } ?: ""
+
+            // Exact match per entry. A plain contains() would report a false positive for
+            // sibling components such as "...AutoMateAccessibilityServiceExtra".
+            if (enabledServices.split(':').any { entry ->
+                    entry.equals(serviceComponent.flattenToShortString(), ignoreCase = true) ||
+                        entry.equals(serviceComponent.flattenToString(), ignoreCase = true)
                 }
-            } catch (_: Exception) {}
-            return false
+            ) return true
+
+            return try {
+                val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE)
+                    as android.view.accessibility.AccessibilityManager
+                am.getEnabledAccessibilityServiceList(
+                    android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_GENERIC
+                ).any { info ->
+                    info.resolveInfo?.serviceInfo?.let { si ->
+                        si.packageName == context.packageName &&
+                            si.name == serviceComponent.className
+                    } ?: false
+                }
+            } catch (_: Exception) {
+                false
+            }
         }
+
+        /** True once the OS has actually bound us, meaning UI automation can run. */
+        val isBound: Boolean get() = instance != null
     }
 }

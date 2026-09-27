@@ -86,10 +86,17 @@ class ActionExecutor @Inject constructor(
             "com.app.beehivehrms" to "com.tns.NativeScriptActivity"
         )
 
-        // Check if app is installed first
+        // Check if app is installed first. getLaunchIntentForPackage() is subject to
+        // package-visibility filtering, so it can report "not installed" for an app that
+        // is present. getPackageInfo() is the authoritative answer.
         val pm = context.packageManager
-        if (pm.getLaunchIntentForPackage(packageName) == null &&
-            pm.queryIntentActivities(Intent().apply { setPackage(packageName) }, 0).isEmpty()) {
+        val installed = try {
+            pm.getPackageInfo(packageName, 0)
+            true
+        } catch (e: Exception) {
+            false
+        }
+        if (!installed) {
             Log.w(TAG, "App not installed: $packageName")
             showAppNotInstalledNotification(packageName)
             return false

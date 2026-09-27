@@ -166,27 +166,40 @@ fun AccessibilityStep(isEnabled: Boolean, onEnable: () -> Unit, onNext: () -> Un
 
 @Composable
 fun LocationStep(onNext: () -> Unit) {
-    var hasLocationPermission by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    var hasForeground by remember { mutableStateOf(false) }
+    var hasBackground by remember { mutableStateOf(false) }
+    var askedForeground by remember { mutableStateOf(false) }
+    var askedBackground by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        // Check location permission
-        val fine = androidx.core.content.ContextCompat.checkSelfPermission(
-            context,
-            android.Manifest.permission.ACCESS_FINE_LOCATION
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        val coarse = androidx.core.content.ContextCompat.checkSelfPermission(
-            context,
-            android.Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        val background = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+    fun refresh() {
+        hasForeground = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
             androidx.core.content.ContextCompat.checkSelfPermission(
-                context,
-                android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        hasBackground = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
             ) == android.content.pm.PackageManager.PERMISSION_GRANTED
         } else true
-        hasLocationPermission = fine && coarse && background
     }
+
+    // Re-check when returning from the system permission screen.
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) refresh()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(Unit) { refresh() }
+
+    val allGranted = hasForeground && hasBackground
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -210,21 +223,65 @@ fun LocationStep(onNext: () -> Unit) {
             textAlign = TextAlign.Center
         )
 
-        if (!hasLocationPermission) {
+        if (!allGranted) {
+            // Background location must be requested in a SEPARATE call after the
+            // foreground grant. On Android 11+ a combined request is dropped by the
+            // system, which is why "Allow all the time" never stuck before.
+            val buttonLabel = when {
+                !hasForeground && !askedForeground -> "Grant Location Permission"
+                !hasForeground -> "Grant Location Permission (Required)"
+                !hasBackground && !askedBackground -> "Grant Background Access"
+                else -> "Open Settings to Allow All the Time"
+            }
+
             Button(onClick = {
-                // Request location permission
                 val activity = context as? android.app.Activity
-                activity?.requestPermissions(
-                    arrayOf(
-                        android.Manifest.permission.ACCESS_FINE_LOCATION,
-                        android.Manifest.permission.ACCESS_COARSE_LOCATION
-                    ) + (if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                        arrayOf(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-                    } else arrayOf()),
-                    1001
-                )
+                when {
+                    !hasForeground -> {
+                        askedForeground = true
+                        activity?.requestPermissions(
+                            arrayOf(
+                                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                android.Manifest.permission.ACCESS_COARSE_LOCATION
+                            ),
+                            1001
+                        )
+                    }
+                    !hasBackground && android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.R -> {
+                        // Android 10 shows a real dialog for background location.
+                        askedBackground = true
+                        activity?.requestPermissions(
+                            arrayOf(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION),
+                            1002
+                        )
+                    }
+                    else -> {
+                        // Android 11+ has no background dialog: send the user to the
+                        // app's permission page where "Allow all the time" lives.
+                        val intent = Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            android.net.Uri.fromParts("package", context.packageName, null)
+                        ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                        try {
+                            context.startActivity(intent)
+                        } catch (_: Exception) {
+                            context.startActivity(
+                                Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    }
+                }
             }) {
-                Text("Grant Location Permission")
+                Text(buttonLabel)
+            }
+
+            if (hasForeground && !hasBackground) {
+                Text(
+                    "Background access is required so triggers work while AutoMate is closed.",
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {

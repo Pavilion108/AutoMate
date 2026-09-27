@@ -44,37 +44,50 @@ class TriggerManager @Inject constructor(
 
     suspend fun enableGeofences() {
         if (!hasLocationPermission()) {
-            Log.w(TAG, "Location permission not granted")
+            Log.w(TAG, "Location permission missing (foreground=${hasForegroundLocationPermission()}, background=${hasBackgroundLocationPermission()}) — geofences NOT registered")
             return
         }
 
         val locations = geofenceLocationDao.getAllLocations().first()
-        for (location in locations) {
-            addGeofence(location)
+        if (locations.isEmpty()) {
+            Log.w(TAG, "No saved locations — nothing to register")
+            return
         }
-        Log.i(TAG, "Enabled ${locations.size} geofences")
 
-        // CRITICAL FALLBACK: Check if user is ALREADY inside a geofence
-        // Google Play Services INITIAL_TRIGGER_ENTER is unreliable —
-        // sometimes doesn't fire when geofences are added while user is inside.
-        checkIfAlreadyInsideGeofence(locations)
+        // Clear stale registrations first so renames/deletes and the 100-item
+        // per-app geofence limit cannot leave orphans behind.
+        try {
+            geofencingClient.removeGeofences(geofencePendingIntent).await()
+            Log.i(TAG, "Cleared previous geofence registrations")
+        } catch (e: Exception) {
+            Log.w(TAG, "No previous geofences to clear: ${e.message}")
+        }
+
+        var added = 0
+        for (location in locations) {
+            if (addGeofence(location)) added++
+        }
+        Log.i(TAG, "Registered $added/${locations.size} geofences")
+
+        // Play Services INITIAL_TRIGGER_ENTER is unreliable when geofences are added
+        // while the user is already inside, so verify locally too.
+        if (added > 0) checkIfAlreadyInsideGeofence(locations)
     }
 
     private suspend fun checkIfAlreadyInsideGeofence(locations: List<GeofenceLocationEntity>) {
         val currentLocation = getLastKnownLocation() ?: run {
             Log.w(TAG, "Cannot check geofence — no location available")
-            return
+            forceLocationUpdate()
+            delay(3000)
+            getLastKnownLocation() ?: run {
+                Log.w(TAG, "Still no location after forced fix")
+                return
+            }
         }
 
-        val armed = variableStore.isArmed()
-        val timedInToday = variableStore.isTimedInToday()
+        if (variableStore.isTimedInToday()) return
 
-        Log.i(TAG, "Checking if already inside geofence: current=${currentLocation.first},${currentLocation.second}, armed=$armed, timedIn=$timedInToday")
-
-        if (!armed || timedInToday) {
-            Log.d(TAG, "Not armed or already timed in, skipping geofence check")
-            return
-        }
+        Log.i(TAG, "Checking geofence: current=${currentLocation.first},${currentLocation.second}, armed=${variableStore.isArmed()}, timedIn=${variableStore.isTimedInToday()}")
 
         for (location in locations) {
             val geofenceLoc = Location("").apply {
@@ -89,13 +102,18 @@ class TriggerManager @Inject constructor(
             Log.i(TAG, "Distance to '${location.name}': ${distance}m (radius: ${location.radiusMeters}m)")
 
             if (distance <= location.radiusMeters) {
-                Log.i(TAG, "User is INSIDE geofence '${location.name}' — triggering time-in directly!")
+                Log.i(TAG, "User is INSIDE '${location.name}' — triggering time-in")
+                if (!variableStore.isArmed()) {
+                    variableStore.setArmed(true)
+                    variableStore.setGoingToWork(true)
+                    variableStore.setTimeInLocation(location.latitude, location.longitude)
+                }
                 taskRunner.startTimeInFlow()
                 return
             }
         }
 
-        Log.i(TAG, "User is outside all geofences — will wait for ENTER transition")
+        Log.i(TAG, "User is outside all geofences — waiting for ENTER transition")
     }
 
     fun disableGeofences() {
@@ -107,8 +125,8 @@ class TriggerManager @Inject constructor(
         }
     }
 
-    private suspend fun addGeofence(location: GeofenceLocationEntity) {
-        if (!hasLocationPermission()) return
+    private suspend fun addGeofence(location: GeofenceLocationEntity): Boolean {
+        if (!hasLocationPermission()) return false
 
         val geofence = Geofence.Builder()
             .setRequestId("geofence_${location.id}")
@@ -130,11 +148,13 @@ class TriggerManager @Inject constructor(
             .addGeofence(geofence)
             .build()
 
-        try {
+        return try {
             geofencingClient.addGeofences(request, geofencePendingIntent).await()
-            Log.i(TAG, "Geofence added: ${location.name}")
+            Log.i(TAG, "Geofence added: '${location.name}' r=${location.radiusMeters}m @ ${location.latitude},${location.longitude}")
+            true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to add geofence: ${location.name}", e)
+            Log.e(TAG, "Failed to add geofence '${location.name}'", e)
+            false
         }
     }
 
@@ -257,14 +277,17 @@ class TriggerManager @Inject constructor(
     // === Aggressive GPS-based Geofence Entry Detection (3-second checks) ===
 
     private var lastGeofenceEntryCheck = 0L
-    private val GEOFENCE_ENTRY_COOLDOWN_MS = 30_000L // Don't re-trigger within 30s
+    private val GEOFENCE_ENTRY_COOLDOWN_MS = 15_000L
 
     private suspend fun checkGeofenceEntry(currentLocation: Location) {
-        val armed = variableStore.isArmed()
-        val timedInToday = variableStore.isTimedInToday()
-        if (!armed || timedInToday) return
+        if (variableStore.isTimedInToday()) return
 
-        // Cooldown — don't spam checks
+        // Bad accuracy would fire a time-in while the user is still walking to the office.
+        if (currentLocation.hasAccuracy() && currentLocation.accuracy > 100f) {
+            Log.d(TAG, "Entry check skipped: accuracy ${currentLocation.accuracy}m")
+            return
+        }
+
         val now = System.currentTimeMillis()
         if (now - lastGeofenceEntryCheck < GEOFENCE_ENTRY_COOLDOWN_MS) return
         lastGeofenceEntryCheck = now
@@ -281,9 +304,20 @@ class TriggerManager @Inject constructor(
                 longitude = geofenceLoc.longitude
             }
             val distance = currentLocation.distanceTo(target)
-
             if (distance <= geofenceLoc.radiusMeters) {
                 Log.i(TAG, "GPS ENTRY detected: ${distance}m from '${geofenceLoc.name}' (radius: ${geofenceLoc.radiusMeters}m)")
+
+                // Self-arming: the 9:40 morning prompt is an exact alarm, which Android 13+
+                // can silently drop, leaving armed=false forever and blocking every trigger.
+                // A confirmed arrival at a saved office is a stronger signal than a timer.
+                if (!variableStore.isArmed()) {
+                    Log.i(TAG, "Auto-arming: user arrived at '${geofenceLoc.name}' but armed=false")
+                    variableStore.setArmed(true)
+                    variableStore.setGoingToWork(true)
+                    // Remember where they clocked in so distance checks use the right office.
+                    variableStore.setTimeInLocation(geofenceLoc.latitude, geofenceLoc.longitude)
+                }
+
                 taskRunner.startTimeInFlow()
                 return
             }
@@ -296,7 +330,8 @@ class TriggerManager @Inject constructor(
         val exitWatch = variableStore.isExitWatch()
         if (!exitWatch) return
 
-        // Get the CLIENT LOCATION (geofence office location) — NOT the time-in GPS point
+        if (!variableStore.isTimedInToday()) return
+
         val locations = try {
             geofenceLocationDao.getAllLocations().first()
         } catch (e: Exception) {
@@ -304,45 +339,75 @@ class TriggerManager @Inject constructor(
         }
         if (locations.isEmpty()) return
 
-        // Check distance from the FIRST client location (primary office)
-        val clientLoc = locations.first()
+        // Multi-location support: measure against the NEAREST saved location, not
+        // locations.first(). Using the first entry made every secondary office look
+        // like a ~19km "exit" and fired an immediate time-out.
+        val nearest = locations.minBy { loc ->
+            val target = Location("").apply {
+                latitude = loc.latitude
+                longitude = loc.longitude
+            }
+            currentLocation.distanceTo(target)
+        }
+
         val target = Location("").apply {
-            latitude = clientLoc.latitude
-            longitude = clientLoc.longitude
+            latitude = nearest.latitude
+            longitude = nearest.longitude
         }
 
         val distance = currentLocation.distanceTo(target)
-        Log.d(TAG, "Distance from client '${clientLoc.name}': ${distance}m (accuracy: ${currentLocation.accuracy}m)")
+        Log.d(TAG, "Distance from nearest client '${nearest.name}': ${distance}m (accuracy: ${currentLocation.accuracy}m)")
 
-        // Only trigger if GPS accuracy is reasonable (< 100m) to avoid false triggers
+        // Poor accuracy would cause both false time-ins and false time-outs.
         if (currentLocation.accuracy > 100f) {
             Log.d(TAG, "GPS accuracy too low (${currentLocation.accuracy}m), skipping exit check")
             return
         }
 
-        // If user is more than exit_watch_distance away from CLIENT LOCATION, trigger time-out
-        val exitDistance = variableStore.getVariable("exit_watch_distance")?.toFloatOrNull() ?: 150f
-        if (distance > exitDistance) {
-            Log.i(TAG, "User left client area (${distance}m from '${clientLoc.name}', threshold: ${exitDistance}m), triggering time-out")
+        // Never fire a time-out while still inside the office geofence radius,
+        // otherwise time-in (200m) and time-out (120m default) can fight each other.
+        val exitDistance = variableStore.getVariable("exit_watch_distance")?.toFloatOrNull()
+            ?: (nearest.radiusMeters + 150f)
+        val effectiveExit = maxOf(exitDistance, nearest.radiusMeters + 50f)
+        if (effectiveExit != exitDistance) {
+            Log.i(TAG, "exit_watch_distance raised to ${effectiveExit}m to clear '${nearest.name}' radius ${nearest.radiusMeters}m")
+        }
+
+        if (distance > effectiveExit) {
+            Log.i(TAG, "User left ${nearest.name} (${distance}m, threshold ${effectiveExit}m), triggering time-out")
             taskRunner.performTimeOut()
         }
     }
 
     // === Location Permission Check ===
 
-    private fun hasLocationPermission(): Boolean {
+    fun hasLocationPermission(): Boolean {
+        return hasForegroundLocationPermission() && hasBackgroundLocationPermission()
+    }
+
+    fun hasForegroundLocationPermission(): Boolean {
         val fine = ContextCompat.checkSelfPermission(
             context, Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
         val coarse = ContextCompat.checkSelfPermission(
             context, Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
-        val background = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        return fine || coarse
+    }
+
+    fun hasBackgroundLocationPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ContextCompat.checkSelfPermission(
                 context, Manifest.permission.ACCESS_BACKGROUND_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
         } else true
-        return fine || coarse || background
+    }
+
+    /** Geofence accuracy needs FINE. Approximate-only location is not good enough. */
+    fun hasPreciseLocationPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
     }
 
     // === Get Last Known Location ===

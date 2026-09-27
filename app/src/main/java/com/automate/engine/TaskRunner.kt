@@ -2,6 +2,7 @@ package com.automate.engine
 
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.util.Log
@@ -35,6 +36,7 @@ class TaskRunner @Inject constructor(
     companion object {
         private const val TAG = "TaskRunner"
         private const val BEEHIVE_PACKAGE = "com.app.beehivehrms"
+        private const val BEEHIVE_ACTIVITY = "com.tns.NativeScriptActivity"
 
         // Beehive detection keywords — any of these on screen means Beehive is loaded
         private val BEEHIVE_INDICATORS = listOf(
@@ -195,31 +197,27 @@ class TaskRunner @Inject constructor(
     // === Shared: Launch Beehive and wait for it ===
 
     private suspend fun launchBeehiveAndDetect(service: AutoMateAccessibilityService): Boolean {
-        // Force-stop first for clean state
+        // Clean slate. "am force-stop" via Runtime.exec() needs shell privileges and
+        // silently no-ops for a normal app UID, so use the supported API instead.
         try {
-            Runtime.getRuntime().exec(arrayOf("am", "force-stop", BEEHIVE_PACKAGE)).waitFor()
-        } catch (_: Exception) {}
-        delay(500)
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            am.killBackgroundProcesses(BEEHIVE_PACKAGE)
+            delay(500)
+        } catch (e: Exception) {
+            Log.w(TAG, "killBackgroundProcesses failed: ${e.message}")
+        }
 
-        // Go home to clear foreground
         service.performGlobalHome()
         delay(500)
 
-        // Launch Beehive
-        try {
-            Runtime.getRuntime().exec(arrayOf(
-                "am", "start", "-n", "$BEEHIVE_PACKAGE/com.tns.NativeScriptActivity"
-            )).waitFor()
-            Log.i(TAG, "Launched Beehive")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch Beehive", e)
+        if (!launchApp(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY)) {
+            showStatusNotification("Error", "Beehive is not installed or could not be opened.")
             return false
         }
+        Log.i(TAG, "Launched Beehive")
 
-        // Wait only 1 second — fast action, smart detection loop takes over
-        delay(1000)
+        delay(1500)
 
-        // Poll for Beehive content (up to 10 attempts, 1s each = max 10s worst case)
         for (i in 1..10) {
             val screenText = service.getScreenText()
             Log.i(TAG, "Beehive detect poll $i: ${screenText.take(200)}")
@@ -236,6 +234,65 @@ class TaskRunner @Inject constructor(
 
         Log.w(TAG, "Beehive not detected after 10 polls")
         return false
+    }
+
+    /**
+     * Starts [packageName] and reports whether it really came to the foreground.
+     *
+     * `Runtime.exec("am start")` is the trap here: from an app UID `am` needs privileges
+     * it does not have, the child process exits non-zero, and because the old code never
+     * checked the exit code it logged "Launched Beehive" and then polled a screen that
+     * never changed. That is exactly the "app closes and nothing opens" symptom.
+     */
+    private fun launchApp(packageName: String, activityClass: String? = null): Boolean {
+        val pm = context.packageManager
+
+        if (!isInstalled(packageName)) {
+            Log.e(TAG, "$packageName is not installed")
+            return false
+        }
+
+        val intent = if (activityClass != null) {
+            Intent().setComponent(ComponentName(packageName, activityClass))
+        } else {
+            pm.getLaunchIntentForPackage(packageName)
+        }
+
+        if (intent == null) {
+            Log.e(TAG, "No launch intent resolved for $packageName")
+            return false
+        }
+
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+            Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+            Intent.FLAG_ACTIVITY_CLEAR_TOP
+        )
+
+        return try {
+            val info = pm.resolveActivity(intent, 0)
+            if (info == null) {
+                Log.e(TAG, "resolveActivity returned null for $packageName")
+                return false
+            }
+            context.startActivity(intent)
+            Log.i(TAG, "startActivity($packageName) dispatched -> $info")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "startActivity($packageName) failed", e)
+            false
+        }
+    }
+
+    /** Authoritative install check. getLaunchIntentForPackage can be null under
+     *  package-visibility rules even when the app is present. */
+    private fun isInstalled(packageName: String): Boolean {
+        return try {
+            context.packageManager.getPackageInfo(packageName, 0)
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     // === Shared: Click SIGN IN with fallback ===
