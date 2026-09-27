@@ -27,7 +27,6 @@ class AutoMateApp : Application() {
         createNotificationChannels()
         initDefaultPrefs()
         requestBatteryOptimization()
-        AccessibilityWatchdogWorker.enqueue(this)
         restoreLocationAutomation()
     }
 
@@ -48,9 +47,12 @@ class AutoMateApp : Application() {
             CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
                 try {
                     if (!triggerManager.isArmed()) {
-                        Log.i(TAG, "Idle (not armed) — skipping GPS and geofences")
+                        Log.i(TAG, "Idle (not armed) — skipping GPS, geofences and watchdog")
                         return@launch
                     }
+                    // The watchdog only exists to keep the accessibility service bound while
+                    // automation is live, so it is armed-only too.
+                    AccessibilityWatchdogWorker.enqueue(applicationContext)
                     triggerManager.startLocationTracking()
                     triggerManager.enableGeofences()
                 } catch (e: Exception) {
