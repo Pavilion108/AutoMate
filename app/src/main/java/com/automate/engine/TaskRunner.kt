@@ -368,8 +368,8 @@ class TaskRunner @Inject constructor(
                 Log.i(TAG, "After login: ${afterLoginText.take(300)}")
 
                 // Step 6: Find and click TIME IN (with nav fallbacks)
-                val clicked = findAndClickTarget(finalService, 
-                    service, "TIME IN",
+                val clicked = findAndClickTarget(finalService,
+                    "TIME IN",
                     "Attendance", "Mark Attendance", "Check In", "Dashboard", "HOME"
                 )
 
