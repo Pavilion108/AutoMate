@@ -37,7 +37,7 @@ class TaskRunner @Inject constructor(
         private const val TAG = "TaskRunner"
         private const val BEEHIVE_PACKAGE = "com.app.beehivehrms"
         private const val BEEHIVE_ACTIVITY = "com.tns.NativeScriptActivity"
-        private const val LAUNCH_NOTIFICATION_ID = 7788
+        private const val PERMISSION_CONTROLLER = "com.android.permissioncontroller"
 
         // Beehive detection keywords — any of these on screen means Beehive is loaded
         private val BEEHIVE_INDICATORS = listOf(
@@ -208,22 +208,20 @@ class TaskRunner @Inject constructor(
             Log.w(TAG, "killBackgroundProcesses failed: ${e.message}")
         }
 
-        // Try a direct start first, verify it actually landed, then escalate to a
-        // full-screen intent. No performGlobalHome() here: going home first is what
-        // guaranteed we were in the background when the launch was rejected.
-        var launched = false
-        if (launchApp(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY, service)) {
-            // Beehive is a NativeScript app and takes several seconds to cold start, so
-            // allow a generous window before declaring the launch a failure.
-            launched = waitForForeground(BEEHIVE_PACKAGE, 10_000)
-            if (!launched) {
-                Log.w(TAG, "startActivity was dispatched but $BEEHIVE_PACKAGE never reached the foreground")
-            }
-        }
+        // Launch through the accessibility service, which attaches a transient overlay
+        // window so Android's background-activity-start check passes. No
+        // performGlobalHome() here: going home first is what guaranteed we were in the
+        // background when the launch was rejected.
+        //
+        // A full-screen intent was tried as a fallback and must not come back: on an
+        // unlocked screen Android only raises it as a heads-up notification, and on this
+        // MIUI build it left the notification shade stuck open and unusable.
+        val launched = launchApp(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY, service) &&
+            // Beehive is a NativeScript app and needs several seconds to cold start.
+            waitForForeground(BEEHIVE_PACKAGE, 12_000)
+
         if (!launched) {
-            launched = launchViaFullScreenIntent(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY)
-        }
-        if (!launched) {
+            Log.w(TAG, "Could not bring $BEEHIVE_PACKAGE to the foreground")
             showStatusNotification("Error", "Beehive is not installed or could not be opened.")
             return false
         }
@@ -243,6 +241,14 @@ class TaskRunner @Inject constructor(
                 Log.i(TAG, "Beehive detected on screen after $i polls")
                 return true
             }
+
+            // On a cold start Beehive puts up Android runtime permission dialogs, which
+            // take the foreground away from it. Grant them so the app can finish loading
+            // instead of timing out on a screen that is not Beehive.
+            if (dismissPermissionDialogs(service)) {
+                Log.i(TAG, "Handled a permission dialog blocking Beehive")
+                continue
+            }
             delay(1000)
         }
 
@@ -251,54 +257,32 @@ class TaskRunner @Inject constructor(
     }
 
     /**
-     * Last-resort launcher: a full-screen intent on a high-importance channel.
+     * Grants any Android runtime permission dialog that is covering the target app.
      *
-     * This is the only mechanism that reliably brings another app to the foreground from
-     * the background on Android 10+ (and MIUI in particular), where startActivity() is
-     * refused with "Abort background activity starts". Returns true once the target
-     * package actually owns the focused window.
+     * Beehive asks for location/storage/notification access on a cold start, and those
+     * system dialogs steal the foreground, which made the flow believe Beehive never
+     * opened. Only the system permission controller is considered, so this can never tap
+     * something inside Beehive itself.
      */
-    private suspend fun launchViaFullScreenIntent(packageName: String, activityClass: String): Boolean {
-        if (!isInstalled(packageName)) return false
-
-        val manager = context.getSystemService(NotificationManager::class.java) ?: return false
-        val intent = Intent().setComponent(ComponentName(packageName, activityClass)).apply {
-            addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP
-            )
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            context, LAUNCH_NOTIFICATION_ID, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(context, AutoMateApp.CHANNEL_APP_LAUNCH)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("AutoMate")
-            .setContentText("Opening Beehive for your attendance check-in")
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setFullScreenIntent(pendingIntent, true)
-            .setAutoCancel(true)
-            .setOngoing(false)
-            .build()
-
-        return try {
-            manager.notify(LAUNCH_NOTIFICATION_ID, notification)
-            Log.i(TAG, "Posted full-screen intent for $packageName")
-
-            // Wait for the system to actually bring it forward.
-            val focused = waitForForeground(packageName, 15_000)
-            manager.cancel(LAUNCH_NOTIFICATION_ID)
-            Log.i(TAG, "Full-screen intent focus=$focused for $packageName")
-            focused
-        } catch (e: Exception) {
-            Log.e(TAG, "Full-screen intent launch failed", e)
-            try { manager.cancel(LAUNCH_NOTIFICATION_ID) } catch (_: Exception) {}
+    private fun dismissPermissionDialogs(service: AutoMateAccessibilityService): Boolean {
+        val controller = try {
+            service.windows.any { it.root?.packageName == "com.android.permissioncontroller" }
+        } catch (_: Exception) {
             false
         }
+        if (!controller) return false
+
+        val labels = listOf(
+            "ALLOW", "While using the app", "Only this time", "Allow", "OK", "Continue"
+        )
+        for (label in labels) {
+            if (service.findActionableNode(label, PERMISSION_CONTROLLER) != null) {
+                if (service.clickNode(service.findActionableNode(label, PERMISSION_CONTROLLER)!!)) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     /**
