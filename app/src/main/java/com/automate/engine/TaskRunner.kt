@@ -339,12 +339,17 @@ class TaskRunner @Inject constructor(
         packageName: String,
         timeoutMs: Long
     ): Boolean {
-        val steps = (timeoutMs / 400).coerceAtLeast(1).toInt()
+        val steps = (timeoutMs / 500).coerceAtLeast(1).toInt()
         repeat(steps) {
             if (AutoMateAccessibilityService.isPackageForegroundStatic(packageName)) return true
-            delay(400)
+            delay(500)
         }
-        return AutoMateAccessibilityService.isPackageForegroundStatic(packageName)
+        Log.w(
+            TAG,
+            "waitForForeground($packageName) timed out; windows=" +
+                AutoMateAccessibilityService.visiblePackages()
+        )
+        return false
     }
 
     /** Authoritative install check. getLaunchIntentForPackage can be null under

@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.content.ComponentName
 import android.content.Context
+import android.app.ActivityManager
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
@@ -324,6 +325,28 @@ class AutoMateAccessibilityService : AccessibilityService() {
         return try {
             windows.any { it.root?.packageName?.toString() == packageName }
         } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Window lists lag behind a cold start, so a freshly launched app can own the screen
+     * for seconds before accessibility reports it. [ActivityManager]'s importance for the
+     * target process is an independent signal and covers that window. The package name is
+     * logged because a mismatch here means we are tapping blind.
+     */
+    fun isPackageLive(packageName: String): Boolean {
+        if (isPackageForeground(packageName)) return true
+        return try {
+            val am = getSystemService(ActivityManager::class.java) ?: return false
+            val targetUid = packageManager.getApplicationInfo(packageName, 0).uid
+            am.runningAppProcesses?.any {
+                it.uid == targetUid &&
+                    (it.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND ||
+                        it.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_PERCEPTIBLE)
+            } ?: false
+        } catch (e: Exception) {
+            Log.w(TAG, "isPackageLive($packageName) failed: ${e.message}")
             false
         }
     }
@@ -718,7 +741,21 @@ class AutoMateAccessibilityService : AccessibilityService() {
          */
         fun isPackageForegroundStatic(packageName: String): Boolean {
             val svc = instance ?: return false
-            return svc.isPackageForeground(packageName)
+            return svc.isPackageLive(packageName)
+        }
+
+        /** Window package names currently visible, for diagnostics. */
+        fun visiblePackages(): List<String> {
+            val svc = instance ?: return emptyList()
+            val names = mutableListOf<String>()
+            try {
+                svc.rootInActiveWindow?.packageName?.toString()?.let { names.add("active:$it") }
+                svc.windows.forEach { w ->
+                    w.root?.packageName?.toString()?.let { names.add(it) }
+                }
+            } catch (_: Exception) {
+            }
+            return names.distinct()
         }
     }
 }
