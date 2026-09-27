@@ -221,7 +221,7 @@ class TaskRunner @Inject constructor(
 
         // Poll for Beehive content (up to 10 attempts, 1s each = max 10s worst case)
         for (i in 1..10) {
-            val screenText = finalService.getScreenText()
+            val screenText = service.getScreenText()
             Log.i(TAG, "Beehive detect poll $i: ${screenText.take(200)}")
 
             val isBeehiveVisible = BEEHIVE_INDICATORS.any { indicator ->
@@ -250,7 +250,7 @@ class TaskRunner @Inject constructor(
             delay(1000)
 
             // Check if page changed
-            val afterText = finalService.getScreenText()
+            val afterText = service.getScreenText()
             if (afterText.contains("SIGN IN") && afterText.contains("Remember Me")) {
                 // Still on login — try coordinate click
                 Log.w(TAG, "Still on login, trying coordinate click")
@@ -423,7 +423,7 @@ class TaskRunner @Inject constructor(
 
         while (attempts < 30) {
             attempts++
-            val screenText = finalService.getScreenText()
+            val screenText = service.getScreenText()
 
             // SUCCESS: Only trigger on compound indicators
             // Must have "recorded" OR ("success" AND NOT just the TIME IN button alone)
@@ -700,7 +700,7 @@ class TaskRunner @Inject constructor(
 
         while (attempts < 30) {
             attempts++
-            val screenText = finalService.getScreenText()
+            val screenText = service.getScreenText()
 
             // SUCCESS detection
             val hasRecorded = screenText.contains("recorded", ignoreCase = true)
