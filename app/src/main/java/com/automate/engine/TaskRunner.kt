@@ -221,7 +221,7 @@ class TaskRunner @Inject constructor(
 
         // Poll for Beehive content (up to 10 attempts, 1s each = max 10s worst case)
         for (i in 1..10) {
-            val screenText = finalService.getScreenText()
+            val screenText = service.getScreenText()
             Log.i(TAG, "Beehive detect poll $i: ${screenText.take(200)}")
 
             val isBeehiveVisible = BEEHIVE_INDICATORS.any { indicator ->
@@ -354,7 +354,7 @@ class TaskRunner @Inject constructor(
                 }
 
                 // Step 5: Click SIGN IN
-                val signedIn = clickSignIn(finalService)
+                val signedIn = clickSignIn(service)
                 if (!signedIn) {
                     Log.w(TAG, "SIGN IN failed, retrying...")
                     delay(1000)
@@ -368,7 +368,7 @@ class TaskRunner @Inject constructor(
                 Log.i(TAG, "After login: ${afterLoginText.take(300)}")
 
                 // Step 6: Find and click TIME IN (with nav fallbacks)
-                val clicked = findAndClickTarget(finalService, 
+                val clicked = findAndClickTarget(service, 
                     service, "TIME IN",
                     "Attendance", "Mark Attendance", "Check In", "Dashboard", "HOME"
                 )
@@ -377,7 +377,7 @@ class TaskRunner @Inject constructor(
                     delay(1000)
 
                     // Step 7: Handle popups
-                    val success = handleTimeInPopups(finalService)
+                    val success = handleTimeInPopups(service)
                     if (success) {
                         Log.i(TAG, "Time-in successful!")
                         variableStore.setTimedInToday(true)
@@ -644,18 +644,18 @@ class TaskRunner @Inject constructor(
                 }
 
                 // Step 5: Click SIGN IN if needed (session may have expired)
-                val screenText = finalService.getScreenText()
+                val screenText = service.getScreenText()
                 val needsLogin = screenText.contains("SIGN IN", ignoreCase = true) &&
                         screenText.contains("Password", ignoreCase = true)
 
                 if (needsLogin) {
                     Log.i(TAG, "Login required for time-out, signing in...")
-                    clickSignIn(finalService)
+                    clickSignIn(service)
                     delay(1000)
                 }
 
                 // Step 6: Find and click TIME OUT
-                val clicked = findAndClickTarget(finalService, "TIME OUT",
+                val clicked = findAndClickTarget(service, "TIME OUT",
                     "Attendance", "Mark Attendance", "Dashboard", "HOME"
                 )
 
@@ -663,7 +663,7 @@ class TaskRunner @Inject constructor(
                     delay(1000)
 
                     // Step 7: Handle popups
-                    val success = handleTimeOutPopups(finalService)
+                    val success = handleTimeOutPopups(service)
                     if (success) {
                         Log.i(TAG, "Time-out successful!")
                         variableStore.setTimedInToday(false)
