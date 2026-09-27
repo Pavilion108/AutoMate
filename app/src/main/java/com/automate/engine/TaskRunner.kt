@@ -586,11 +586,18 @@ class TaskRunner @Inject constructor(
         return predicate(service.getScreenTextFor(BEEHIVE_PACKAGE))
     }
 
+    /**
+     * Runs the clock-in sequence.
+     *
+     * This deliberately does not set `armed`. Arming is a decision made once, by the
+     * morning prompt or the dashboard toggle; setting it here meant a stale geofence event
+     * could switch the day back on, which is the behaviour the user asked to remove. A
+     * geofence entry only reaches this function when the day is already armed.
+     */
     suspend fun startTimeInFlow(accountId: Long = 0) {
         timeInJob?.cancel()
         timeInJob = scope.launch {
             Log.i(TAG, "Starting smart time-in flow")
-            variableStore.setArmed(true)
             variableStore.setTimedInToday(false)
 
             val context = context
