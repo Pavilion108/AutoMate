@@ -208,10 +208,16 @@ class TaskRunner @Inject constructor(
             Log.w(TAG, "killBackgroundProcesses failed: ${e.message}")
         }
 
-        // Launch through the accessibility service first, then fall back to a
+        // Try a direct start first, verify it actually landed, then escalate to a
         // full-screen intent. No performGlobalHome() here: going home first is what
         // guaranteed we were in the background when the launch was rejected.
-        var launched = launchApp(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY, service)
+        var launched = false
+        if (launchApp(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY, service)) {
+            launched = waitForForeground(BEEHIVE_PACKAGE, 3_000)
+            if (!launched) {
+                Log.w(TAG, "startActivity was dispatched but $BEEHIVE_PACKAGE never reached the foreground")
+            }
+        }
         if (!launched) {
             launched = launchViaFullScreenIntent(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY)
         }
@@ -282,14 +288,7 @@ class TaskRunner @Inject constructor(
             Log.i(TAG, "Posted full-screen intent for $packageName")
 
             // Wait for the system to actually bring it forward.
-            var focused = false
-            repeat(15) {
-                delay(1000)
-                if (AutoMateAccessibilityService.isPackageForegroundStatic(packageName)) {
-                    focused = true
-                    return@repeat
-                }
-            }
+            val focused = waitForForeground(packageName, 15_000)
             manager.cancel(LAUNCH_NOTIFICATION_ID)
             Log.i(TAG, "Full-screen intent focus=$focused for $packageName")
             focused
@@ -318,11 +317,6 @@ class TaskRunner @Inject constructor(
             return false
         }
 
-        // Preferred path: exempt from background-activity-launch restrictions.
-        if (service != null && service.launchPackage(packageName, activityClass)) {
-            return true
-        }
-
         return try {
             val intent = if (activityClass != null) {
                 Intent().setComponent(ComponentName(packageName, activityClass))
@@ -335,12 +329,39 @@ class TaskRunner @Inject constructor(
                 Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
                 Intent.FLAG_ACTIVITY_CLEAR_TOP
             )
-            context.startActivity(intent)
+
+            // Preferred path: an AccessibilityService is on the background-activity-start
+            // exemption list. Note this can still be refused on MIUI, and a refused
+            // startActivity does NOT throw, so the caller must verify focus landed.
+            if (service != null) {
+                service.launchPackage(packageName, activityClass)
+            } else {
+                context.startActivity(intent)
+            }
             true
         } catch (e: Exception) {
             Log.e(TAG, "startActivity($packageName) failed", e)
             false
         }
+    }
+
+    /**
+     * Waits briefly for [packageName] to own the focused window.
+     *
+     * Dispatching an intent is not proof it worked: Android 10+ silently drops background
+     * activity starts and `startActivity` returns normally, so without this check the flow
+     * logs "Launched Beehive" and then polls whatever app happens to be in front.
+     */
+    private suspend fun waitForForeground(
+        packageName: String,
+        timeoutMs: Long
+    ): Boolean {
+        val steps = (timeoutMs / 400).coerceAtLeast(1).toInt()
+        repeat(steps) {
+            if (AutoMateAccessibilityService.isPackageForegroundStatic(packageName)) return true
+            delay(400)
+        }
+        return AutoMateAccessibilityService.isPackageForegroundStatic(packageName)
     }
 
     /** Authoritative install check. getLaunchIntentForPackage can be null under
