@@ -216,11 +216,17 @@ class TaskRunner @Inject constructor(
         // A full-screen intent was tried as a fallback and must not come back: on an
         // unlocked screen Android only raises it as a heads-up notification, and on this
         // MIUI build it left the notification shade stuck open and unusable.
-        // Beehive is a NativeScript app; on a cold process start it can take 15-20s to
-        // draw its first frame, so the wait has to be generous or every launch looks like
-        // a failure.
-        val launched = launchApp(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY, service) &&
-            waitForForeground(BEEHIVE_PACKAGE, 35_000)
+        val dispatched = launchApp(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY, service)
+        var launched = dispatched
+        if (dispatched) {
+            // Beehive is a NativeScript app; on a cold process start it can take 15-20s to
+            // draw its first frame, so the wait has to be generous or every launch looks
+            // like a failure. The overlay is held until the switch has settled rather than
+            // dropped on a timer, which raced the transition and wedged SystemUI.
+            launched = waitForForeground(BEEHIVE_PACKAGE, 35_000)
+            service.releaseStealthOverlayWhenSettled(BEEHIVE_PACKAGE)
+            if (!launched) Log.w(TAG, "Launch dispatched but $BEEHIVE_PACKAGE never took focus")
+        }
 
         if (!launched) {
             Log.w(TAG, "Could not bring $BEEHIVE_PACKAGE to the foreground")
@@ -343,7 +349,12 @@ class TaskRunner @Inject constructor(
     ): Boolean {
         val steps = (timeoutMs / 500).coerceAtLeast(1).toInt()
         repeat(steps) {
-            if (AutoMateAccessibilityService.isPackageForegroundStatic(packageName)) return true
+            if (AutoMateAccessibilityService.isPackageForegroundStatic(packageName)) {
+                return true
+            }
+            // A stuck notification shade hides a fully rendered app, so push it away
+            // instead of waiting it out.
+            AutoMateAccessibilityService.instance?.dismissCoveringOverlay()
             delay(500)
         }
         Log.w(

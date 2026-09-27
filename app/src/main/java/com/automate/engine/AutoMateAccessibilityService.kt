@@ -291,6 +291,47 @@ class AutoMateAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * Keeps the overlay until [packageName] really owns the screen, then removes it.
+     *
+     * Tearing the window down on a fixed 1.5s timer raced the activity transition and
+     * repeatedly wedged MIUI's SystemUI with the notification shade stuck open. Holding
+     * the window until the switch has actually happened removes that race.
+     */
+    fun releaseStealthOverlayWhenSettled(packageName: String, timeoutMs: Long = 20_000) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (isPackageLive(packageName)) break
+            Thread.sleep(300)
+        }
+        mainHandler.postDelayed({ detachStealthOverlay() }, 500)
+    }
+
+    /**
+     * Dismisses a system overlay that is covering the target app.
+     *
+     * The MIUI notification shade can end up focused over a fully rendered app, which
+     * makes every accessibility read come back empty. Pushing it away is far better than
+     * declaring the target app missing.
+     */
+    fun dismissCoveringOverlay(): Boolean {
+        val covering = try {
+            val active = rootInActiveWindow?.packageName?.toString()
+            active == "com.android.systemui"
+        } catch (_: Exception) {
+            false
+        }
+        if (!covering) return false
+        return try {
+            val done = performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+            Log.i(TAG, "dismissCoveringOverlay shade=$done")
+            done
+        } catch (e: Exception) {
+            Log.w(TAG, "dismissCoveringOverlay failed: ${e.message}")
+            false
+        }
+    }
+
+    /**
      * Starts an app from the accessibility service context.
      *
      * Android 10+ blocks background activity launches: an app that is not in the
@@ -320,14 +361,8 @@ class AutoMateAccessibilityService : AccessibilityService() {
         return try {
             // Own a window first so the system treats us as visible and allows the start.
             val overlaid = attachStealthOverlay()
-            try {
-                startActivity(intent)
-                Log.i(TAG, "launchPackage($packageName) overlay=$overlaid")
-            } finally {
-                // Give the activity manager a moment to act on the start before the
-                // window disappears, otherwise it can race back to "not visible".
-                android.os.Handler(mainLooper).postDelayed({ detachStealthOverlay() }, 1500)
-            }
+            startActivity(intent)
+            Log.i(TAG, "launchPackage($packageName) overlay=$overlaid")
             true
         } catch (e: Exception) {
             Log.e(TAG, "launchPackage($packageName) failed", e)
