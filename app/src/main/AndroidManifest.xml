@@ -95,6 +95,10 @@
                 <action android:name="TEST_TIME_OUT" />
                 <action android:name="TEST_MORNING" />
                 <action android:name="TEST_TIMEOUT_PROMPT" />
+                <action android:name="ARM_TODAY" />
+                <action android:name="DISARM_TODAY" />
+                <action android:name="SET_DRY_RUN" />
+                <action android:name="DRY_RUN_TIME_IN" />
             </intent-filter>
         </receiver>
 
