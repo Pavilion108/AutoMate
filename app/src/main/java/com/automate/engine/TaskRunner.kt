@@ -276,11 +276,8 @@ class TaskRunner @Inject constructor(
             "ALLOW", "While using the app", "Only this time", "Allow", "OK", "Continue"
         )
         for (label in labels) {
-            if (service.findActionableNode(label, PERMISSION_CONTROLLER) != null) {
-                if (service.clickNode(service.findActionableNode(label, PERMISSION_CONTROLLER)!!)) {
-                    return true
-                }
-            }
+            val node = service.findActionableNode(label, PERMISSION_CONTROLLER) ?: continue
+            if (service.clickNodeRobustly(node)) return true
         }
         return false
     }
