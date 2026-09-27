@@ -10,7 +10,9 @@ import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.WindowManager
 import android.accessibilityservice.AccessibilityService
 import com.automate.domain.model.Action
 import com.automate.domain.model.ActionType
@@ -197,6 +199,57 @@ class AutoMateAccessibilityService : AccessibilityService() {
         }
     }
 
+    private var stealthOverlay: View? = null
+
+    /**
+     * Briefly attaches a 1x1 fully transparent overlay.
+     *
+     * Android 10+ refuses background activity starts ("Abort background activity starts")
+     * unless the calling app is visible. A window the app actually owns satisfies that
+     * visibility check, so attaching this for a moment around startActivity() is what makes
+     * the launch stick. MIUI rejects it even for a bound AccessibilityService, and a
+     * full-screen intent is only honoured while the screen is idle, so neither of those
+     * alone is enough.
+     */
+    private fun attachStealthOverlay(): Boolean {
+        if (stealthOverlay != null) return true
+        val wm = try {
+            getSystemService(WindowManager::class.java)
+        } catch (_: Exception) {
+            null
+        } ?: return false
+
+        val view = View(this)
+        val params = WindowManager.LayoutParams(
+            1,
+            1,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            android.graphics.PixelFormat.TRANSLUCENT
+        ).apply { alpha = 0.01f }
+
+        return try {
+            wm.addView(view, params)
+            stealthOverlay = view
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "stealth overlay attach failed: ${e.message}")
+            false
+        }
+    }
+
+    private fun detachStealthOverlay() {
+        val view = stealthOverlay ?: return
+        stealthOverlay = null
+        try {
+            getSystemService(WindowManager::class.java)?.removeView(view)
+        } catch (_: Exception) {
+        }
+    }
+
     /**
      * Starts an app from the accessibility service context.
      *
@@ -225,11 +278,20 @@ class AutoMateAccessibilityService : AccessibilityService() {
         )
 
         return try {
-            startActivity(intent)
-            Log.i(TAG, "launchPackage($packageName) via accessibility service")
+            // Own a window first so the system treats us as visible and allows the start.
+            val overlaid = attachStealthOverlay()
+            try {
+                startActivity(intent)
+                Log.i(TAG, "launchPackage($packageName) overlay=$overlaid")
+            } finally {
+                // Give the activity manager a moment to act on the start before the
+                // window disappears, otherwise it can race back to "not visible".
+                android.os.Handler(mainLooper).postDelayed({ detachStealthOverlay() }, 1500)
+            }
             true
         } catch (e: Exception) {
             Log.e(TAG, "launchPackage($packageName) failed", e)
+            detachStealthOverlay()
             false
         }
     }
