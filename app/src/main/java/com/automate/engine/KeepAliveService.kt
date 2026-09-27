@@ -44,6 +44,7 @@ class KeepAliveService : Service() {
     private var isLocationTracking = false
 
     override fun onCreate() {
+        running = true
         super.onCreate()
         Log.i(TAG, "KeepAliveService created")
         createNotificationChannel()
@@ -124,6 +125,7 @@ class KeepAliveService : Service() {
     }
 
     override fun onDestroy() {
+        running = false
         super.onDestroy()
         watchdogJob?.cancel()
         stopForegroundLocationTracking()
@@ -378,6 +380,10 @@ class KeepAliveService : Service() {
         const val ACTION_STOP_LOCATION_TRACKING = "STOP_LOCATION_TRACKING"
         const val ACTION_LOCATION_UPDATE = "com.automate.LOCATION_UPDATE"
 
+        /** True only while the service is actually alive. */
+        @Volatile
+        private var running = false
+
         fun start(context: Context) {
             val intent = Intent(context, KeepAliveService::class.java)
             context.startForegroundService(intent)
@@ -398,7 +404,19 @@ class KeepAliveService : Service() {
             }
         }
 
+        /**
+         * Sends an action to the service only if it is already alive.
+         *
+         * Both helpers used to call startService(), which resurrected a stopped
+         * keep-alive service from MainActivity and the dashboard. That is why the app kept
+         * a foreground GPS service running on days it was never armed. They must never
+         * start the service themselves; only armForToday() may do that.
+         */
         fun rebindAccessibility(context: Context) {
+            if (!running) {
+                Log.i(TAG, "rebindAccessibility skipped: service not running (not armed)")
+                return
+            }
             val intent = Intent(context, KeepAliveService::class.java).apply {
                 action = ACTION_REBIND_ACCESSIBILITY
             }
@@ -406,6 +424,10 @@ class KeepAliveService : Service() {
         }
 
         fun checkAndRebind(context: Context) {
+            if (!running) {
+                Log.i(TAG, "checkAndRebind skipped: service not running (not armed)")
+                return
+            }
             val intent = Intent(context, KeepAliveService::class.java).apply {
                 action = ACTION_CHECK_AND_REBIND
             }
