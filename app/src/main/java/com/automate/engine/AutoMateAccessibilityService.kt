@@ -9,6 +9,7 @@ import android.app.ActivityManager
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.graphics.Path
 import android.os.Bundle
 import android.provider.Settings
