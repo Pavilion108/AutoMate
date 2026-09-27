@@ -418,13 +418,12 @@ class TaskRunner @Inject constructor(
 
     // === Time-In Popup Handler ===
 
-    private suspend fun handleTimeInPopups(finalService): Boolean {
-        val service = AutoMateAccessibilityService.instance ?: return false
+    private suspend fun handleTimeInPopups(service: AutoMateAccessibilityService): Boolean {
         var attempts = 0
 
         while (attempts < 30) {
             attempts++
-            val screenText = finalService.getScreenText()
+            val screenText = service.getScreenText()
 
             // SUCCESS: Only trigger on compound indicators
             // Must have "recorded" OR ("success" AND NOT just the TIME IN button alone)
@@ -664,7 +663,7 @@ class TaskRunner @Inject constructor(
                     delay(1000)
 
                     // Step 7: Handle popups
-                    val success = handleTimeOutPopups()
+                    val success = handleTimeOutPopups(finalService)
                     if (success) {
                         Log.i(TAG, "Time-out successful!")
                         variableStore.setTimedInToday(false)
@@ -696,13 +695,12 @@ class TaskRunner @Inject constructor(
 
     // === Time-Out Popup Handler ===
 
-    private suspend fun handleTimeOutPopups(): Boolean {
-        val service = AutoMateAccessibilityService.instance ?: return false
+    private suspend fun handleTimeOutPopups(service: AutoMateAccessibilityService): Boolean {
         var attempts = 0
 
         while (attempts < 30) {
             attempts++
-            val screenText = finalService.getScreenText()
+            val screenText = service.getScreenText()
 
             // SUCCESS detection
             val hasRecorded = screenText.contains("recorded", ignoreCase = true)
