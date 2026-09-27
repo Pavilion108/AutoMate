@@ -20,7 +20,22 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        // A checked-in debug key keeps every CI build upgrade-compatible. GitHub runners
+        // generate a fresh debug.keystore per job, which made every build fail
+        // `adb install -r` with INSTALL_FAILED_UPDATE_INCOMPATIBLE.
+        create("stableDebug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("stableDebug")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
