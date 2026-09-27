@@ -323,7 +323,7 @@ class AutoMateAccessibilityService : AccessibilityService() {
             // Accessibility global actions are the only way to do this without an Activity:
             // requestDismissKeyguard() requires one, and launching a throwaway Activity from
             // the background is exactly the operation the platform refuses.
-            if (performGlobalAction(GLOBAL_ACTION_WAKEUP)) ok = true
+            if (performGlobalAction(android.view.accessibility.AccessibilityService.GLOBAL_ACTION_WAKEUP)) ok = true
         } catch (e: Exception) {
             Log.w(TAG, "GLOBAL_ACTION_WAKEUP failed: ${e.message}")
         }
@@ -334,7 +334,7 @@ class AutoMateAccessibilityService : AccessibilityService() {
             val km = getSystemService(KeyguardManager::class.java)
             if (km != null && km.isKeyguardLocked) {
                 // Only dismisses a non-secure lockscreen; a PIN cannot be cleared this way.
-                val dismissed = performGlobalAction(GLOBAL_ACTION_UNLOCK)
+                val dismissed = performGlobalAction(android.view.accessibility.AccessibilityService.GLOBAL_ACTION_UNLOCK)
                 Log.i(TAG, "wakeAndUnlock wake=$ok unlock=$dismissed")
                 ok = ok || dismissed
             } else {
