@@ -189,7 +189,10 @@ class AutoMateAccessibilityService : AccessibilityService() {
         }
 
         for (i in 0 until node.childCount) {
-            collectActionable(node.getChild(i) ?: continue, text, exact, excludeContaining, out, depth + 1)
+            val child = node.getChild(i)
+            if (child != null) {
+                collectActionable(child, text, exact, excludeContaining, out, depth + 1)
+            }
         }
     }
 
