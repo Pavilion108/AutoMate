@@ -81,10 +81,18 @@ fun DashboardScreen(
             }
 
             item {
+                // One-tap on/off for the whole day. Off means the app keeps no
+                // geofences, no GPS and no foreground service.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    QuickActionButton(
+                        modifier = Modifier.weight(1f),
+                        icon = if (uiState.isArmed) Icons.Default.Stop else Icons.Default.PlayArrow,
+                        label = if (uiState.isArmed) "Not going today" else "Going to office",
+                        onClick = { viewModel.setArmedForToday(!uiState.isArmed) }
+                    )
                     QuickActionButton(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Default.PlayArrow,

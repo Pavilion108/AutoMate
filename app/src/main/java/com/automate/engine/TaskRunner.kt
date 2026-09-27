@@ -32,12 +32,15 @@ class TaskRunner @Inject constructor(
     private var timeInJob: Job? = null
     private var timeOutJob: Job? = null
     private var popupHandlerJob: Job? = null
+    private var metroJob: Job? = null
+    private var endOfDayCutoffJob: Job? = null
 
     companion object {
         private const val TAG = "TaskRunner"
         private const val BEEHIVE_PACKAGE = "com.app.beehivehrms"
         private const val BEEHIVE_ACTIVITY = "com.tns.NativeScriptActivity"
         private const val PERMISSION_CONTROLLER = "com.android.permissioncontroller"
+        private const val EOD_CUTOFF_HOUR = 20
 
         // Beehive detection keywords — any of these on screen means Beehive is loaded
         private val BEEHIVE_INDICATORS = listOf(
@@ -79,8 +82,8 @@ class TaskRunner @Inject constructor(
 
         val notification = NotificationCompat.Builder(context, AutoMateApp.CHANNEL_MORNING_PROMPT)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("AutoMate")
-            .setContentText("Going to work today?")
+            .setContentTitle("Going to the office today?")
+            .setContentText("Yes turns on location check-in. No keeps AutoMate off all day.")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setContentIntent(pendingIntent)
@@ -96,27 +99,99 @@ class TaskRunner @Inject constructor(
 
     fun handleMorningResponse(goingToWork: Boolean) {
         scope.launch {
-            variableStore.setGoingToWork(goingToWork)
-
             if (goingToWork) {
-                Log.i(TAG, "User is going to work - enabling geofence monitoring")
-                variableStore.setArmed(true)
-                // CRITICAL: Start GPS tracking FIRST so location is available
-                // when enableGeofences checks if user is already inside
-                triggerManagerProvider.get().startLocationTracking()
-                triggerManagerProvider.get().enableGeofences()
-                showStatusNotification("Going to work", "Monitoring your location for check-in")
-
-                // Schedule metro prompt after configurable delay (default 1 hour)
-                scheduleMetroPrompt()
+                armForToday()
             } else {
-                Log.i(TAG, "User is staying home - disabling everything")
+                disarmForToday("Staying home")
+            }
+        }
+    }
+
+    /**
+     * Turns the day on. Only the morning prompt (or the dashboard toggle) may call this.
+     *
+     * The user asked for the app to stay completely off on days they do not go in, so
+     * arming is an explicit decision and nothing else is allowed to set it.
+     */
+    suspend fun armForToday() {
+        Log.i(TAG, "Arming for today")
+        variableStore.setGoingToWork(true)
+        variableStore.setArmed(true)
+        variableStore.setTimedInToday(false)
+        variableStore.setExitWatch(false)
+
+        // The foreground service hosts the GPS listener and the accessibility watchdog,
+        // so it is started here rather than at app launch.
+        KeepAliveService.start(context)
+
+        // Location must be live before geofences are added, because enableGeofences()
+        // checks whether the user is already inside a saved location.
+        triggerManagerProvider.get().startLocationTracking()
+        triggerManagerProvider.get().enableGeofences()
+        showStatusNotification("Going to work", "Monitoring your location for check-in")
+
+        scheduleMetroPrompt()
+        scheduleEndOfDayCutoff()
+    }
+
+    /**
+     * Turns the day off completely: geofences, GPS, foreground service and every flag.
+     *
+     * This is the "not going to the office" path, so it has to leave no background work
+     * behind at all.
+     */
+    suspend fun disarmForToday(reason: String) {
+        Log.i(TAG, "Disarming for today: $reason")
+        variableStore.setGoingToWork(false)
+        variableStore.setArmed(false)
+        variableStore.setTimedInToday(false)
+        variableStore.setExitWatch(false)
+
+        try {
+            triggerManagerProvider.get().disableGeofences()
+            triggerManagerProvider.get().stopLocationTracking()
+        } catch (e: Exception) {
+            Log.e(TAG, "Teardown failed", e)
+        }
+        KeepAliveService.stop(context)
+
+        // Never cancel the job we are running inside, or the teardown would abort itself
+        // at the next suspension point.
+        val current = kotlinx.coroutines.currentCoroutineContext()[Job]
+        if (metroJob != null && metroJob != current) metroJob?.cancel()
+        if (endOfDayCutoffJob != null && endOfDayCutoffJob != current) endOfDayCutoffJob?.cancel()
+        if (timeInJob != null && timeInJob != current) timeInJob?.cancel()
+        if (timeOutJob != null && timeOutJob != current) timeOutJob?.cancel()
+        Log.i(TAG, "AutoMate is idle for today")
+    }
+
+    /**
+     * Backstop so a forgotten "Yes" or a failed check-out cannot leave the app running
+     * overnight. Disarms at [EOD_CUTOFF_HOUR]:00 local time.
+     */
+    private suspend fun scheduleEndOfDayCutoff() {
+        endOfDayCutoffJob?.cancel()
+        endOfDayCutoffJob = scope.launch {
+            val now = java.util.Calendar.getInstance()
+            val target = (now.clone() as java.util.Calendar).apply {
+                set(java.util.Calendar.HOUR_OF_DAY, EOD_CUTOFF_HOUR)
+                set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+                if (timeInMillis <= now.timeInMillis) add(java.util.Calendar.DAY_OF_YEAR, 1)
+            }
+            val waitMs = target.timeInMillis - now.timeInMillis
+            Log.i(TAG, "End-of-day cutoff scheduled in ${waitMs / 60000} min")
+            delay(waitMs)
+            if (!variableStore.isTimedInToday()) {
+                disarmForToday("end-of-day cutoff")
+                showStatusNotification("AutoMate off", "Nothing to do today. Back on tomorrow morning.")
+            } else {
+                // Still clocked in: stop the location work but keep the day's flag so
+                // check-out can still be recognised.
                 variableStore.setArmed(false)
-                variableStore.setTimedInToday(false)
-                variableStore.setExitWatch(false)
-                triggerManagerProvider.get().disableGeofences()
                 triggerManagerProvider.get().stopLocationTracking()
-                showStatusNotification("Staying home", "AutoMate is off for today")
+                KeepAliveService.stop(context)
             }
         }
     }
@@ -206,6 +281,15 @@ class TaskRunner @Inject constructor(
             delay(500)
         } catch (e: Exception) {
             Log.w(TAG, "killBackgroundProcesses failed: ${e.message}")
+        }
+
+        // A geofence almost always fires with the phone in a pocket, so wake it and get
+        // past the keyguard first. Without this every read below returns the lock screen
+        // and the flow fails no matter how correct the rest of it is.
+        if (!service.isScreenOn()) {
+            Log.i(TAG, "Screen is off — waking and clearing keyguard")
+            service.wakeAndUnlock()
+            delay(2000)
         }
 
         // Launch through the accessibility service, which attaches a transient overlay
@@ -422,6 +506,26 @@ class TaskRunner @Inject constructor(
     }
 
 
+    /**
+     * Waits for the dashboard to finish laying out.
+     *
+     * Beehive's NativeScript grid paints its labels immediately but assigns real bounds a
+     * moment later, so a node read too early looks present in the screen text yet has a
+     * zero-sized rectangle and is rejected as not actionable.
+     */
+    private suspend fun settleDashboard(service: AutoMateAccessibilityService) {
+        repeat(10) {
+            val node = service.findActionableNode("TIME IN", BEEHIVE_PACKAGE) ?:
+                service.findActionableNode("TIME OUT", BEEHIVE_PACKAGE)
+            if (node != null) {
+                Log.i(TAG, "Dashboard laid out")
+                return
+            }
+            delay(1000)
+        }
+        Log.w(TAG, "Dashboard did not expose an actionable attendance button in time")
+    }
+
     // === Smart Time-In Flow ===
 
     /** Resolves the bound service, waiting briefly for the framework to connect it. */
@@ -516,10 +620,14 @@ class TaskRunner @Inject constructor(
                 Log.i(TAG, "Already signed in - skipping login step")
             }
 
-            // Retry only the tap. A missed click must never restart the app.
+            // The dashboard text appears before the layout settles, so a node can carry
+            // the "TIME IN" label while its bounds are still zero. Give it time and try
+            // progressively looser matching before giving up.
+            settleDashboard(service)
             var clicked = false
-            for (attempt in 1..3) {
+            for (attempt in 1..6) {
                 val target = service.findActionableNode("TIME IN", BEEHIVE_PACKAGE)
+                    ?: service.findActionableNode("TIME IN", BEEHIVE_PACKAGE, exact = false)
                 if (target != null) {
                     Log.i(TAG, "Found TIME IN (attempt $attempt), clicking")
                     clicked = service.clickNodeRobustly(target)
@@ -804,15 +912,14 @@ class TaskRunner @Inject constructor(
 
             if (handleTimeOutPopups(service)) {
                 Log.i(TAG, "Time-out successful!")
-                variableStore.setTimedInToday(false)
-                variableStore.setArmed(false)
-                showStatusNotification("Time-Out Recorded", "Have a good evening!")
+                // Full teardown: the day is over, so the app goes completely idle rather
+                // than sitting on a foreground service and GPS until the cutoff alarm.
+                disarmForToday("time-out recorded")
+                showStatusNotification("Time-Out Recorded", "Have a good evening! AutoMate is off for today.")
                 actionExecutor.executeAction(Action(
                     type = ActionType.GLOBAL_ACTION,
                     globalActionType = "home"
                 ))
-                triggerManagerProvider.get().disableGeofences()
-                triggerManagerProvider.get().stopLocationTracking()
             } else {
                 Log.w(TAG, "Time-Out popup handling did not confirm success")
                 showStatusNotification("Time-Out", "Please confirm your checkout in Beehive.")

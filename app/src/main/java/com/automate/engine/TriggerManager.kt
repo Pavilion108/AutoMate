@@ -103,11 +103,6 @@ class TriggerManager @Inject constructor(
 
             if (distance <= location.radiusMeters) {
                 Log.i(TAG, "User is INSIDE '${location.name}' — triggering time-in")
-                if (!variableStore.isArmed()) {
-                    variableStore.setArmed(true)
-                    variableStore.setGoingToWork(true)
-                    variableStore.setTimeInLocation(location.latitude, location.longitude)
-                }
                 taskRunner.startTimeInFlow()
                 return
             }
@@ -115,6 +110,12 @@ class TriggerManager @Inject constructor(
 
         Log.i(TAG, "User is outside all geofences — waiting for ENTER transition")
     }
+
+    /**
+     * Whether the day is switched on. The morning prompt and the dashboard toggle are
+     * the only things that set this; nothing infers it from location.
+     */
+    suspend fun isArmed(): Boolean = variableStore.isArmed()
 
     fun disableGeofences() {
         try {
@@ -307,16 +308,11 @@ class TriggerManager @Inject constructor(
             if (distance <= geofenceLoc.radiusMeters) {
                 Log.i(TAG, "GPS ENTRY detected: ${distance}m from '${geofenceLoc.name}' (radius: ${geofenceLoc.radiusMeters}m)")
 
-                // Self-arming: the 9:40 morning prompt is an exact alarm, which Android 13+
-                // can silently drop, leaving armed=false forever and blocking every trigger.
-                // A confirmed arrival at a saved office is a stronger signal than a timer.
-                if (!variableStore.isArmed()) {
-                    Log.i(TAG, "Auto-arming: user arrived at '${geofenceLoc.name}' but armed=false")
-                    variableStore.setArmed(true)
-                    variableStore.setGoingToWork(true)
-                    // Remember where they clocked in so distance checks use the right office.
-                    variableStore.setTimeInLocation(geofenceLoc.latitude, geofenceLoc.longitude)
-                }
+                // Remember which office this is so exit checks measure from the right pin.
+                // Arming is deliberately NOT done here: the morning prompt is the only
+                // thing allowed to turn the day on, otherwise arriving anywhere would
+                // silently switch the app back on after the user said they were staying in.
+                variableStore.setTimeInLocation(geofenceLoc.latitude, geofenceLoc.longitude)
 
                 taskRunner.startTimeInFlow()
                 return

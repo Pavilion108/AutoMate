@@ -383,6 +383,21 @@ class KeepAliveService : Service() {
             context.startForegroundService(intent)
         }
 
+        /**
+         * Shuts the service down completely.
+         *
+         * Used by the end-of-day teardown: leaving the service alive keeps a foreground
+         * notification, a GPS listener and the accessibility watchdog running, which is
+         * exactly the all-day battery drain the user asked to avoid.
+         */
+        fun stop(context: Context) {
+            try {
+                context.stopService(Intent(context, KeepAliveService::class.java))
+            } catch (e: Exception) {
+                Log.w(TAG, "stop failed: ${e.message}")
+            }
+        }
+
         fun rebindAccessibility(context: Context) {
             val intent = Intent(context, KeepAliveService::class.java).apply {
                 action = ACTION_REBIND_ACCESSIBILITY

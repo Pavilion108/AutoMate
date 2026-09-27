@@ -27,17 +27,17 @@ class AutoMateApp : Application() {
         createNotificationChannels()
         initDefaultPrefs()
         requestBatteryOptimization()
-        KeepAliveService.start(this)
         AccessibilityWatchdogWorker.enqueue(this)
         restoreLocationAutomation()
     }
 
     /**
-     * Geofences and the foreground GPS tracker used to be registered only as a side
-     * effect of adding a location or of the 9:40 morning prompt. Because the prompt is
-     * an exact alarm that Android 13+ can drop, a normal app launch ended up with
-     * zero registered geofences — the reason locations were "not detected".
-     * Re-registering on every start makes the pipeline self-healing.
+     * Brings location automation back only when the day is actually switched on.
+     *
+     * This used to re-register geofences and start GPS on every launch, which was the
+     * fix for "geofences not registered" but meant the app ran all day even on days the
+     * user never went to the office. The morning prompt is now the only thing that arms
+     * the day, so startup just has to honour that flag.
      */
     private fun restoreLocationAutomation() {
         try {
@@ -47,6 +47,10 @@ class AutoMateApp : Application() {
             val triggerManager = entryPoint.triggerManager()
             CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
                 try {
+                    if (!triggerManager.isArmed()) {
+                        Log.i(TAG, "Idle (not armed) — skipping GPS and geofences")
+                        return@launch
+                    }
                     triggerManager.startLocationTracking()
                     triggerManager.enableGeofences()
                 } catch (e: Exception) {

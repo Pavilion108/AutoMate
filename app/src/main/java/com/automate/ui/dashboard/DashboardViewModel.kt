@@ -113,6 +113,23 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Manual on/off switch for the day.
+     *
+     * The morning prompt is the normal way in, but it is an exact alarm the user can miss,
+     * and "I am not going in" must always be reachable in one tap. This is the same
+     * arm/disarm path the prompt uses.
+     */
+    fun setArmedForToday(going: Boolean) {
+        viewModelScope.launch {
+            if (going) {
+                taskRunner.armForToday()
+            } else {
+                taskRunner.disarmForToday("manual toggle")
+            }
+        }
+    }
+
     private fun getTriggerDescription(task: Task): String {
         return when (task.trigger.type) {
             com.automate.domain.model.TriggerType.GEOFENCE_ENTER -> {

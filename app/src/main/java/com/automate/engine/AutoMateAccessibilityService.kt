@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.content.ComponentName
 import android.content.Context
+import android.app.KeyguardManager
 import android.app.ActivityManager
 import android.content.Intent
 import android.os.Handler
@@ -307,6 +308,49 @@ class AutoMateAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * Wakes the screen and clears a non-secure keyguard.
+     *
+     * A geofence fires while the phone is in a pocket, so the screen is asleep and the
+     * keyguard is up. In that state `rootInActiveWindow` is the lock screen, every
+     * accessibility read comes back empty and no target app can be brought forward —
+     * the automation silently fails. A secure (PIN/pattern) lockscreen cannot be
+     * dismissed this way by design; the caller gets false and reports it.
+     */
+    fun wakeAndUnlock(): Boolean {
+        var woke = false
+        try {
+            val pm = getSystemService(PowerManager::class.java)
+            if (pm != null && !pm.isInteractive) {
+                @Suppress("DEPRECATION")
+                pm.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP, "automate:wake")
+                    .apply { setReferenceCounted(false); acquire(10_000) }
+                woke = true
+                Log.i(TAG, "wakeAndUnlock requested screen wake")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "wake failed: ${e.message}")
+        }
+
+        // Give the system a moment to actually show the lock screen before asking to
+        // dismiss it, otherwise the request races the wake and silently fails.
+        Thread.sleep(1200)
+
+        var unlocked = false
+        try {
+            val km = getSystemService(KeyguardManager::class.java)
+            if (km != null && km.isKeyguardLocked) {
+                unlocked = km.requestDismissKeyguard(null, null)
+                Log.i(TAG, "wakeAndUnlock requestDismissKeyguard=$unlocked")
+            } else {
+                unlocked = true
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "dismiss keyguard failed: ${e.message}")
+        }
+        return woke || unlocked
+    }
+
+    /**
      * Dismisses a system overlay that is covering the target app.
      *
      * The MIUI notification shade can end up focused over a fully rendered app, which
@@ -376,8 +420,15 @@ class AutoMateAccessibilityService : AccessibilityService() {
      * MIUI's launcher exposes plenty of text, so without this check "Beehive not detected"
      * would poll a home screen and eventually give up.
      */
-    fun isPackageForeground(packageName: String): Boolean {
-        val root = rootInActiveWindow
+    /** True when the display is on, i.e. accessibility reads are meaningful. */
+    fun isScreenOn(): Boolean = try {
+        val pm = getSystemService(PowerManager::class.java)
+        pm != null && pm.isInteractive
+    } catch (e: Exception) {
+        false
+    }
+
+    fun isPackageForeground(packageName: String): Boolean {        val root = rootInActiveWindow
         if (root?.packageName?.toString() == packageName) return true
         return try {
             windows.any { it.root?.packageName?.toString() == packageName }

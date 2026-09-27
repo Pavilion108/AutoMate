@@ -121,6 +121,17 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 }
             }
 
+            // Manual arm/disarm from the dashboard, or from a shortcut tile.
+            "ARM_TODAY" -> {
+                Log.i(TAG, "Manual arm for today")
+                taskRunner.handleMorningResponse(true)
+            }
+
+            "DISARM_TODAY" -> {
+                Log.i(TAG, "Manual disarm for today")
+                taskRunner.handleMorningResponse(false)
+            }
+
             // Quick test setup: set all variables for time-out testing
             "TEST_SETUP_TIMEOUT" -> {
                 Log.i(TAG, "Test setup: configuring for time-out testing")
