@@ -216,9 +216,11 @@ class TaskRunner @Inject constructor(
         // A full-screen intent was tried as a fallback and must not come back: on an
         // unlocked screen Android only raises it as a heads-up notification, and on this
         // MIUI build it left the notification shade stuck open and unusable.
+        // Beehive is a NativeScript app; on a cold process start it can take 15-20s to
+        // draw its first frame, so the wait has to be generous or every launch looks like
+        // a failure.
         val launched = launchApp(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY, service) &&
-            // Beehive is a NativeScript app and needs several seconds to cold start.
-            waitForForeground(BEEHIVE_PACKAGE, 12_000)
+            waitForForeground(BEEHIVE_PACKAGE, 35_000)
 
         if (!launched) {
             Log.w(TAG, "Could not bring $BEEHIVE_PACKAGE to the foreground")
