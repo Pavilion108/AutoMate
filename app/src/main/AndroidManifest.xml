@@ -55,6 +55,18 @@
             </intent-filter>
         </activity>
 
+        <!-- Wakes the screen and clears a non-secure keyguard so a geofence arriving from a
+             pocket can still be read. Draws nothing and finishes immediately. -->
+        <activity
+            android:name=".engine.WakeActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:showOnLockScreen="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- Accessibility Service for UI Automation -->
         <service
             android:name=".engine.AutoMateAccessibilityService"

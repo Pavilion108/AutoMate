@@ -317,33 +317,38 @@ class AutoMateAccessibilityService : AccessibilityService() {
      * the automation silently fails. A secure (PIN/pattern) lockscreen cannot be
      * dismissed this way by design; the caller gets false and reports it.
      */
+    /**
+     * Turns the screen on and gets a non-secure keyguard out of the way.
+     *
+     * A geofence fires while the phone is in a pocket, so the screen is asleep and the
+     * keyguard is up. In that state `rootInActiveWindow` is the lock screen, every
+     * accessibility read comes back empty and no target app can be brought forward.
+     *
+     * Accessibility has no wake/unlock global action, and `requestDismissKeyguard()`
+     * requires an Activity, so this launches a transparent [WakeActivity] that carries
+     * the platform flags and finishes immediately. It is started with the same transient
+     * overlay used for normal launches, so the background-activity-start check passes.
+     * A PIN/pattern lockscreen cannot be cleared this way, by design.
+     */
     fun wakeAndUnlock(): Boolean {
-        var ok = false
+        val overlaid = attachStealthOverlay()
+        var started = false
         try {
-            // Accessibility global actions are the only way to do this without an Activity:
-            // requestDismissKeyguard() requires one, and launching a throwaway Activity from
-            // the background is exactly the operation the platform refuses.
-            if (performGlobalAction(android.view.accessibility.AccessibilityService.GLOBAL_ACTION_WAKEUP)) ok = true
-        } catch (e: Exception) {
-            Log.w(TAG, "GLOBAL_ACTION_WAKEUP failed: ${e.message}")
-        }
-
-        Thread.sleep(1500)
-
-        try {
-            val km = getSystemService(KeyguardManager::class.java)
-            if (km != null && km.isKeyguardLocked) {
-                // Only dismisses a non-secure lockscreen; a PIN cannot be cleared this way.
-                val dismissed = performGlobalAction(android.view.accessibility.AccessibilityService.GLOBAL_ACTION_UNLOCK)
-                Log.i(TAG, "wakeAndUnlock wake=$ok unlock=$dismissed")
-                ok = ok || dismissed
-            } else {
-                Log.i(TAG, "wakeAndUnlock wake=$ok keyguardNotLocked=true")
+            val intent = Intent(this, WakeActivity::class.java).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                        Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+                )
             }
+            startActivity(intent)
+            started = true
         } catch (e: Exception) {
-            Log.w(TAG, "unlock failed: ${e.message}")
+            Log.w(TAG, "wakeAndUnlock failed to start WakeActivity: ${e.message}")
         }
-        return ok
+        Log.i(TAG, "wakeAndUnlock started=$started overlay=$overlaid")
+        mainHandler.postDelayed({ detachStealthOverlay() }, 3000)
+        return started
     }
 
     /**
