@@ -156,7 +156,8 @@ class AutoMateAccessibilityService : AccessibilityService() {
             var score = 0L
             if (node.isClickable) score += 1_000_000_000L
             if (node.isEnabled) score += 100_000_000L
-            score += r.width().toLong() * r.height()
+            score += r.width().toLong() * r.height().toLong()
+            score
         }
     }
 
