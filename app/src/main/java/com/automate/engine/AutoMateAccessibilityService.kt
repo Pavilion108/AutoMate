@@ -138,16 +138,35 @@ class AutoMateAccessibilityService : AccessibilityService() {
      * nothing, which used to burn every retry and then relaunch the app. So we require the
      * node to be visible, non-degenerate, and prefer a clickable ancestor.
      */
+    /**
+     * The root node to inspect for [packageName].
+     *
+     * Reading only `rootInActiveWindow` is what made the automation look "blind": a
+     * notification shade, a runtime permission dialog or any system window taking focus
+     * made every lookup return null and the flow give up even though the target app was
+     * fully rendered behind it. Scanning the window list for the target package keeps the
+     * flow working whenever the app is visible at all.
+     */
+    fun rootForPackage(packageName: String): AccessibilityNodeInfo? {
+        try {
+            windows.forEach { w ->
+                val root = w.root ?: return@forEach
+                if (root.packageName?.toString() == packageName) return root
+            }
+        } catch (_: Exception) {
+        }
+        val active = rootInActiveWindow
+        return if (active?.packageName?.toString() == packageName) active else null
+    }
+
     fun findActionableNode(
         text: String,
         packageName: String? = null,
         exact: Boolean = true,
         excludeContaining: List<String> = emptyList()
     ): AccessibilityNodeInfo? {
-        val root = rootInActiveWindow ?: return null
-        if (packageName != null && root.packageName?.toString() != packageName) {
-            return null
-        }
+        val root = if (packageName != null) rootForPackage(packageName) else rootInActiveWindow
+            ?: return null
 
         val candidates = mutableListOf<AccessibilityNodeInfo>()
         collectActionable(root, text, exact, excludeContaining, candidates, 0)
@@ -655,6 +674,14 @@ class AutoMateAccessibilityService : AccessibilityService() {
 
     fun getScreenText(): String {
         val root = rootInActiveWindow ?: return ""
+        val sb = StringBuilder()
+        extractText(root, sb)
+        return sb.toString()
+    }
+
+    /** Screen text belonging to [packageName], ignoring any system window in front. */
+    fun getScreenTextFor(packageName: String): String {
+        val root = rootForPackage(packageName) ?: return ""
         val sb = StringBuilder()
         extractText(root, sb)
         return sb.toString()

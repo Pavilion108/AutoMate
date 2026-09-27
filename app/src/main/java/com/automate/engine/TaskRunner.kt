@@ -230,8 +230,8 @@ class TaskRunner @Inject constructor(
         delay(2000)
 
         for (i in 1..15) {
-            val screenText = service.getScreenText()
-            val inBeehive = service.isPackageForeground(BEEHIVE_PACKAGE)
+            val screenText = service.getScreenTextFor(BEEHIVE_PACKAGE)
+            val inBeehive = service.isPackageLive(BEEHIVE_PACKAGE)
             Log.i(TAG, "Beehive detect poll $i (pkg=$inBeehive): ${screenText.take(160)}")
 
             val isBeehiveVisible = inBeehive && BEEHIVE_INDICATORS.any { indicator ->
@@ -398,7 +398,7 @@ class TaskRunner @Inject constructor(
             delay(1500)
         }
 
-        val afterText = service.getScreenText()
+        val afterText = service.getScreenTextFor(BEEHIVE_PACKAGE)
         if (afterText.contains("SIGN IN", ignoreCase = true) &&
             afterText.contains("Remember Me", ignoreCase = true)
         ) {
@@ -427,7 +427,7 @@ class TaskRunner @Inject constructor(
      * would sign the user out.
      */
     private fun isLoginScreen(service: AutoMateAccessibilityService): Boolean {
-        val text = service.getScreenText()
+        val text = service.getScreenTextFor(BEEHIVE_PACKAGE)
         if (text.contains("Hi,", ignoreCase = true)) return false
         if (text.contains("MY TEAM", ignoreCase = true)) return false
         val hasSignInButton = service.findActionableNode("SIGN IN", BEEHIVE_PACKAGE) != null
@@ -437,7 +437,7 @@ class TaskRunner @Inject constructor(
     }
 
     private fun isDashboardVisible(service: AutoMateAccessibilityService): Boolean {
-        val text = service.getScreenText()
+        val text = service.getScreenTextFor(BEEHIVE_PACKAGE)
         return text.contains("Hi,", ignoreCase = true) ||
             text.contains("MY TEAM", ignoreCase = true) ||
             text.contains("TIME IN", ignoreCase = true) ||
@@ -451,11 +451,11 @@ class TaskRunner @Inject constructor(
     ): Boolean {
         var waited = 0L
         while (waited < timeoutMs) {
-            if (predicate(service.getScreenText())) return true
+            if (predicate(service.getScreenTextFor(BEEHIVE_PACKAGE))) return true
             delay(1000)
             waited += 1000
         }
-        return predicate(service.getScreenText())
+        return predicate(service.getScreenTextFor(BEEHIVE_PACKAGE))
     }
 
     suspend fun startTimeInFlow(accountId: Long = 0) {
@@ -511,7 +511,7 @@ class TaskRunner @Inject constructor(
                     Log.i(TAG, "Found TIME IN (attempt $attempt), clicking")
                     clicked = service.clickNodeRobustly(target)
                 } else {
-                    Log.w(TAG, "TIME IN not found (attempt $attempt); screen=${service.getScreenText().take(200)}")
+                    Log.w(TAG, "TIME IN not found (attempt $attempt); screen=${service.getScreenTextFor(BEEHIVE_PACKAGE).take(200)}")
                 }
                 if (clicked) break
                 delay(2000)
@@ -559,7 +559,7 @@ class TaskRunner @Inject constructor(
 
         while (attempts < 30) {
             attempts++
-            val screenText = service.getScreenText()
+            val screenText = service.getScreenTextFor(BEEHIVE_PACKAGE)
 
             // SUCCESS: Only trigger on compound indicators
             // Must have "recorded" OR ("success" AND NOT just the TIME IN button alone)
@@ -776,7 +776,7 @@ class TaskRunner @Inject constructor(
                     Log.i(TAG, "Found TIME OUT (attempt $attempt), clicking")
                     clicked = service.clickNodeRobustly(target)
                 } else {
-                    Log.w(TAG, "TIME OUT not found (attempt $attempt); screen=${service.getScreenText().take(200)}")
+                    Log.w(TAG, "TIME OUT not found (attempt $attempt); screen=${service.getScreenTextFor(BEEHIVE_PACKAGE).take(200)}")
                 }
                 if (clicked) break
                 delay(2000)
@@ -814,7 +814,7 @@ class TaskRunner @Inject constructor(
 
         while (attempts < 30) {
             attempts++
-            val screenText = service.getScreenText()
+            val screenText = service.getScreenTextFor(BEEHIVE_PACKAGE)
 
             // SUCCESS detection
             val hasRecorded = screenText.contains("recorded", ignoreCase = true)
