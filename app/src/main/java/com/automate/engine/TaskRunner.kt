@@ -295,10 +295,12 @@ class TaskRunner @Inject constructor(
         // A geofence almost always fires with the phone in a pocket, so wake it and get
         // past the keyguard first. Without this every read below returns the lock screen
         // and the flow fails no matter how correct the rest of it is.
-        if (!service.isScreenOn()) {
-            Log.i(TAG, "Screen is off — waking and clearing keyguard")
+        if (service.needsWakeOrUnlock()) {
+            Log.i(TAG, "Screen is off or locked — waking and clearing keyguard")
             service.wakeAndUnlock()
-            delay(2000)
+            // Give the keyguard animation time to finish; reading during the transition
+            // returns the lock screen and looks like a launch failure.
+            delay(3000)
         }
 
         // Launch through the accessibility service, which attaches a transient overlay

@@ -424,12 +424,23 @@ class AutoMateAccessibilityService : AccessibilityService() {
      * MIUI's launcher exposes plenty of text, so without this check "Beehive not detected"
      * would poll a home screen and eventually give up.
      */
-    /** True when the display is on, i.e. accessibility reads are meaningful. */
-    fun isScreenOn(): Boolean = try {
+    /**
+     * True when the display is off or the keyguard is up, i.e. when accessibility reads
+     * are meaningless.
+     *
+     * Checking only `isInteractive` is not enough: the display can be lit while the
+     * lockscreen is still showing, which is exactly the state a geofence arrival leaves
+     * behind. In that state every node lookup returns the lock screen and the flow stalls
+     * with no error, so both conditions have to be covered.
+     */
+    fun needsWakeOrUnlock(): Boolean = try {
         val pm = getSystemService(PowerManager::class.java)
-        pm != null && pm.isInteractive
+        val km = getSystemService(KeyguardManager::class.java)
+        val displayOff = pm == null || !pm.isInteractive
+        val locked = km?.isKeyguardLocked == true
+        displayOff || locked
     } catch (e: Exception) {
-        false
+        true
     }
 
     fun isPackageForeground(packageName: String): Boolean {        val root = rootInActiveWindow
