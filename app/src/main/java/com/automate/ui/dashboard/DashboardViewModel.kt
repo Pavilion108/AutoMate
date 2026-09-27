@@ -179,7 +179,7 @@ class DashboardViewModel @Inject constructor(
             Log.w(TAG, "Accessibility not enabled, triggering rebind")
             KeepAliveService.checkAndRebind(getApplication())
             // Show notification
-            val context = getApplication()
+            val context: Context = getApplication()
             val intent = Intent(context, MainActivity::class.java)
             val pendingIntent = PendingIntent.getActivity(
                 context, 0, intent,
@@ -213,7 +213,7 @@ class DashboardViewModel @Inject constructor(
         if (!AutoMateAccessibilityService.isEnabled(getApplication())) {
             Log.w(TAG, "Accessibility not enabled, triggering rebind")
             KeepAliveService.checkAndRebind(getApplication())
-            val context = getApplication()
+            val context: Context = getApplication()
             val intent = Intent(context, MainActivity::class.java)
             val pendingIntent = PendingIntent.getActivity(
                 context, 0, intent,
