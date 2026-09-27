@@ -131,7 +131,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
             "DRY_RUN_TIME_IN" -> {
                 Log.i(TAG, "Dry run time-in requested")
-                taskRunner.startTimeInFlow()
+                scope.launch { taskRunner.startTimeInFlow() }
             }
 
             // Manual arm/disarm from the dashboard, or from a shortcut tile.
