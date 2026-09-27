@@ -4,6 +4,10 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.content.ComponentName
 import android.content.Context
+import com.automate.AutoMateApp
+import android.app.Notification
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.KeyguardManager
 import android.app.ActivityManager
 import android.content.Intent
@@ -334,24 +338,49 @@ class AutoMateAccessibilityService : AccessibilityService() {
      * A PIN/pattern lockscreen cannot be cleared this way, by design.
      */
     fun wakeAndUnlock(): Boolean {
-        val overlaid = attachStealthOverlay()
-        var started = false
+        // A full-screen intent is the only mechanism Android honours for turning the
+        // display on from the background. FLAG_TURN_SCREEN_ON on an Activity started by a
+        // background service is silently ignored, and there is no accessibility global
+        // action for waking the device. The target Activity draws nothing, so this is
+        // invisible apart from the screen coming on.
+        var posted = false
         try {
-            val intent = Intent(this, WakeActivity::class.java).apply {
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_NO_ANIMATION or
-                        Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
-                )
-            }
-            startActivity(intent)
-            started = true
+            val nm = getSystemService(NotificationManager::class.java)
+            val pending = PendingIntent.getActivity(
+                this, 4242,
+                Intent(this, WakeActivity::class.java).apply {
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                            Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+                    )
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val notification = Notification.Builder(this, AutoMateApp.CHANNEL_SCREEN_WAKE)
+                .setSmallIcon(android.R.drawable.ic_menu_day)
+                .setContentTitle("AutoMate")
+                .setContentText("Waking up")
+                .setOngoing(true)
+                .setAutoCancel(false)
+                .setFullScreenIntent(pending, true)
+                .build()
+            nm?.notify(WAKE_NOTIFICATION_ID, notification)
+            posted = true
         } catch (e: Exception) {
-            Log.w(TAG, "wakeAndUnlock failed to start WakeActivity: ${e.message}")
+            Log.w(TAG, "wakeAndUnlock could not post full-screen intent: ${e.message}")
         }
-        Log.i(TAG, "wakeAndUnlock started=$started overlay=$overlaid")
-        mainHandler.postDelayed({ detachStealthOverlay() }, 3000)
-        return started
+        Log.i(TAG, "wakeAndUnlock fullScreenIntentPosted=$posted")
+
+        // Clear it once the screen is up so it cannot re-fire later.
+        mainHandler.postDelayed({
+            try {
+                getSystemService(NotificationManager::class.java)?.cancel(WAKE_NOTIFICATION_ID)
+            } catch (e: Exception) {
+                Log.w(TAG, "wake notification cancel failed: ${e.message}")
+            }
+        }, 6000)
+        return posted
     }
 
     /**
@@ -811,6 +840,7 @@ class AutoMateAccessibilityService : AccessibilityService() {
     }
 
     companion object {
+        private const val WAKE_NOTIFICATION_ID = 4242
         private const val TAG = "AutoMateAccessibility"
         var instance: AutoMateAccessibilityService? = null
             private set
