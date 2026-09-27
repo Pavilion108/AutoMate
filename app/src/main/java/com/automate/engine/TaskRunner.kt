@@ -207,22 +207,24 @@ class TaskRunner @Inject constructor(
             Log.w(TAG, "killBackgroundProcesses failed: ${e.message}")
         }
 
-        service.performGlobalHome()
-        delay(500)
-
-        if (!launchApp(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY)) {
+        // Launch through the accessibility service. Calling startActivity() from the app
+        // itself is refused by Android 10+ ("Abort background activity starts"), so the
+        // target app never opens. No performGlobalHome() here: going home first is what
+        // guaranteed we were in the background when the launch was rejected.
+        if (!launchApp(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY, service)) {
             showStatusNotification("Error", "Beehive is not installed or could not be opened.")
             return false
         }
         Log.i(TAG, "Launched Beehive")
 
-        delay(1500)
+        delay(2000)
 
-        for (i in 1..10) {
+        for (i in 1..15) {
             val screenText = service.getScreenText()
-            Log.i(TAG, "Beehive detect poll $i: ${screenText.take(200)}")
+            val inBeehive = service.isPackageForeground(BEEHIVE_PACKAGE)
+            Log.i(TAG, "Beehive detect poll $i (pkg=$inBeehive): ${screenText.take(160)}")
 
-            val isBeehiveVisible = BEEHIVE_INDICATORS.any { indicator ->
+            val isBeehiveVisible = inBeehive && BEEHIVE_INDICATORS.any { indicator ->
                 screenText.contains(indicator, ignoreCase = true)
             }
             if (isBeehiveVisible) {
@@ -232,51 +234,46 @@ class TaskRunner @Inject constructor(
             delay(1000)
         }
 
-        Log.w(TAG, "Beehive not detected after 10 polls")
+        Log.w(TAG, "Beehive not detected after 15 polls")
         return false
     }
 
     /**
-     * Starts [packageName] and reports whether it really came to the foreground.
+     * Starts [packageName] and reports whether it was dispatched.
      *
      * `Runtime.exec("am start")` is the trap here: from an app UID `am` needs privileges
      * it does not have, the child process exits non-zero, and because the old code never
      * checked the exit code it logged "Launched Beehive" and then polled a screen that
      * never changed. That is exactly the "app closes and nothing opens" symptom.
      */
-    private fun launchApp(packageName: String, activityClass: String? = null): Boolean {
-        val pm = context.packageManager
-
+    private fun launchApp(
+        packageName: String,
+        activityClass: String? = null,
+        service: AutoMateAccessibilityService? = null
+    ): Boolean {
         if (!isInstalled(packageName)) {
             Log.e(TAG, "$packageName is not installed")
             return false
         }
 
-        val intent = if (activityClass != null) {
-            Intent().setComponent(ComponentName(packageName, activityClass))
-        } else {
-            pm.getLaunchIntentForPackage(packageName)
+        // Preferred path: exempt from background-activity-launch restrictions.
+        if (service != null && service.launchPackage(packageName, activityClass)) {
+            return true
         }
-
-        if (intent == null) {
-            Log.e(TAG, "No launch intent resolved for $packageName")
-            return false
-        }
-
-        intent.addFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK or
-            Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
-            Intent.FLAG_ACTIVITY_CLEAR_TOP
-        )
 
         return try {
-            val info = pm.resolveActivity(intent, 0)
-            if (info == null) {
-                Log.e(TAG, "resolveActivity returned null for $packageName")
-                return false
-            }
+            val intent = if (activityClass != null) {
+                Intent().setComponent(ComponentName(packageName, activityClass))
+            } else {
+                context.packageManager.getLaunchIntentForPackage(packageName)
+            } ?: return false
+
+            intent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP
+            )
             context.startActivity(intent)
-            Log.i(TAG, "startActivity($packageName) dispatched -> $info")
             true
         } catch (e: Exception) {
             Log.e(TAG, "startActivity($packageName) failed", e)

@@ -197,6 +197,58 @@ class AutoMateAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Starts an app from the accessibility service context.
+     *
+     * Android 10+ blocks background activity launches: an app that is not in the
+     * foreground gets "Abort background activity starts from <uid>" and the target app
+     * never appears, which is exactly the reported "app closes and nothing opens"
+     * symptom. An AccessibilityService is one of the few components exempt from that
+     * restriction when acting on the user's behalf, so launching from here works.
+     */
+    fun launchPackage(packageName: String, activityClass: String? = null): Boolean {
+        val pm = packageManager
+
+        val intent = if (activityClass != null) {
+            Intent().setComponent(ComponentName(packageName, activityClass))
+        } else {
+            pm.getLaunchIntentForPackage(packageName)
+        } ?: run {
+            Log.w(TAG, "No launch intent for $packageName")
+            return false
+        }
+
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+            Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+            Intent.FLAG_ACTIVITY_CLEAR_TOP
+        )
+
+        return try {
+            startActivity(intent)
+            Log.i(TAG, "launchPackage($packageName) via accessibility service")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "launchPackage($packageName) failed", e)
+            false
+        }
+    }
+
+    /**
+     * True when [packageName] owns the focused window. Screen text alone is not enough:
+     * MIUI's launcher exposes plenty of text, so without this check "Beehive not detected"
+     * would poll a home screen and eventually give up.
+     */
+    fun isPackageForeground(packageName: String): Boolean {
+        val root = rootInActiveWindow
+        if (root?.packageName?.toString() == packageName) return true
+        return try {
+            windows.any { it.root?.packageName?.toString() == packageName }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     /** True when the node is on screen with a usable tap area. */
     fun isTappable(node: AccessibilityNodeInfo): Boolean {
         val r = android.graphics.Rect()
