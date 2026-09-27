@@ -49,7 +49,10 @@ class AutoMateAccessibilityService : AccessibilityService() {
         }
 
         instance = this
-        KeepAliveService.start(this)
+        // Deliberately does not start KeepAliveService. The accessibility service is
+        // always bound by the OS, so starting GPS from here would run location tracking
+        // on every non-office day. The service is started by TaskRunner.armForToday() and
+        // stopped again on disarm.
         Log.i(TAG, "AutoMate Accessibility Service connected")
     }
 
