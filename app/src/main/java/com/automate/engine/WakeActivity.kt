@@ -2,6 +2,7 @@ package com.automate.engine
 
 import android.app.Activity
 import android.os.Bundle
+import android.view.Window
 import android.view.WindowManager
 
 /**
@@ -31,10 +32,9 @@ class WakeActivity : Activity() {
             WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                 WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
-                WindowManager.LayoutParams.FLAG_TRANSLUCENT or
-                WindowManager.LayoutParams.FLAG_NO_TITLE
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
         )
+        requestWindowFeature(Window.FEATURE_NO_TITLE)
 
         // No content view: this Activity must never be seen.
         finish()
