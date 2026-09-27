@@ -221,7 +221,7 @@ class TaskRunner @Inject constructor(
 
         // Poll for Beehive content (up to 10 attempts, 1s each = max 10s worst case)
         for (i in 1..10) {
-            val screenText = service.getScreenText()
+            val screenText = finalService.getScreenText()
             Log.i(TAG, "Beehive detect poll $i: ${screenText.take(200)}")
 
             val isBeehiveVisible = BEEHIVE_INDICATORS.any { indicator ->
@@ -250,7 +250,7 @@ class TaskRunner @Inject constructor(
             delay(1000)
 
             // Check if page changed
-            val afterText = service.getScreenText()
+            val afterText = finalService.getScreenText()
             if (afterText.contains("SIGN IN") && afterText.contains("Remember Me")) {
                 // Still on login — try coordinate click
                 Log.w(TAG, "Still on login, trying coordinate click")
@@ -268,7 +268,7 @@ class TaskRunner @Inject constructor(
 
     // === Shared: Find and click a target button with navigation fallback ===
 
-    private suspend fun findAndClickTarget(
+    private suspend fun findAndClickTarget(finalService, 
         service: AutoMateAccessibilityService,
         target: String,
         vararg fallbackNavTexts: String
@@ -307,18 +307,36 @@ class TaskRunner @Inject constructor(
 
     // === Smart Time-In Flow ===
 
-    fun startTimeInFlow(accountId: Long = 0) {
+    suspend fun startTimeInFlow(accountId: Long = 0) {
         timeInJob?.cancel()
         timeInJob = scope.launch {
             Log.i(TAG, "Starting smart time-in flow")
             variableStore.setArmed(true)
             variableStore.setTimedInToday(false)
 
-            val service = AutoMateAccessibilityService.instance
-            if (service == null) {
-                showStatusNotification("Error", "Accessibility service not running")
+            // Use robust check instead of instance (avoids race condition on bind)
+            val context = context
+            if (!AutoMateAccessibilityService.isEnabled(context)) {
+                showStatusNotification("Error", "Accessibility service not enabled. Open Settings > Accessibility > AutoMate.")
+                KeepAliveService.checkAndRebind(context)
                 return@launch
             }
+
+            val service = AutoMateAccessibilityService.instance
+            if (service == null) {
+                // Service enabled but not bound yet - wait briefly
+                var waits = 0
+                while (AutoMateAccessibilityService.instance == null && waits < 10) {
+                    delay(500)
+                    waits++
+                }
+                val boundService = AutoMateAccessibilityService.instance
+                if (boundService == null) {
+                    showStatusNotification("Error", "Accessibility service not bound. Try again in a moment.")
+                    return@launch
+                }
+            }
+            val finalService = AutoMateAccessibilityService.instance!!
 
             var attempts = 0
             val maxAttempts = 20
@@ -328,7 +346,7 @@ class TaskRunner @Inject constructor(
                 Log.i(TAG, "Time-in attempt $attempts/$maxAttempts")
 
                 // Step 1-4: Launch Beehive and wait for it
-                val beehiveReady = launchBeehiveAndDetect(service)
+                val beehiveReady = launchBeehiveAndDetect(finalService)
                 if (!beehiveReady) {
                     Log.w(TAG, "Beehive not ready, retrying...")
                     delay(1000)
@@ -336,7 +354,7 @@ class TaskRunner @Inject constructor(
                 }
 
                 // Step 5: Click SIGN IN
-                val signedIn = clickSignIn(service)
+                val signedIn = clickSignIn(finalService)
                 if (!signedIn) {
                     Log.w(TAG, "SIGN IN failed, retrying...")
                     delay(1000)
@@ -346,11 +364,11 @@ class TaskRunner @Inject constructor(
                 delay(1000) // Wait for page transition
 
                 // Check if we're past login
-                val afterLoginText = service.getScreenText()
+                val afterLoginText = finalService.getScreenText()
                 Log.i(TAG, "After login: ${afterLoginText.take(300)}")
 
                 // Step 6: Find and click TIME IN (with nav fallbacks)
-                val clicked = findAndClickTarget(
+                val clicked = findAndClickTarget(finalService, 
                     service, "TIME IN",
                     "Attendance", "Mark Attendance", "Check In", "Dashboard", "HOME"
                 )
@@ -359,7 +377,7 @@ class TaskRunner @Inject constructor(
                     delay(1000)
 
                     // Step 7: Handle popups
-                    val success = handleTimeInPopups()
+                    val success = handleTimeInPopups(finalService)
                     if (success) {
                         Log.i(TAG, "Time-in successful!")
                         variableStore.setTimedInToday(true)
@@ -400,13 +418,13 @@ class TaskRunner @Inject constructor(
 
     // === Time-In Popup Handler ===
 
-    private suspend fun handleTimeInPopups(): Boolean {
+    private suspend fun handleTimeInPopups(finalService): Boolean {
         val service = AutoMateAccessibilityService.instance ?: return false
         var attempts = 0
 
         while (attempts < 30) {
             attempts++
-            val screenText = service.getScreenText()
+            val screenText = finalService.getScreenText()
 
             // SUCCESS: Only trigger on compound indicators
             // Must have "recorded" OR ("success" AND NOT just the TIME IN button alone)
@@ -583,17 +601,33 @@ class TaskRunner @Inject constructor(
 
     // === Smart Time-Out Flow (mirrors time-in with login) ===
 
-    fun performTimeOut() {
+    suspend fun performTimeOut() {
         timeOutJob?.cancel()
         timeOutJob = scope.launch {
             Log.i(TAG, "Performing time-out")
             variableStore.setExitWatch(false)
 
-            val service = AutoMateAccessibilityService.instance
-            if (service == null) {
-                showStatusNotification("Error", "Accessibility service not running")
+            val context = context
+            if (!AutoMateAccessibilityService.isEnabled(context)) {
+                showStatusNotification("Error", "Accessibility service not enabled. Open Settings > Accessibility > AutoMate.")
+                KeepAliveService.checkAndRebind(context)
                 return@launch
             }
+
+            val service = AutoMateAccessibilityService.instance
+            if (service == null) {
+                var waits = 0
+                while (AutoMateAccessibilityService.instance == null && waits < 10) {
+                    delay(500)
+                    waits++
+                }
+                val boundService = AutoMateAccessibilityService.instance
+                if (boundService == null) {
+                    showStatusNotification("Error", "Accessibility service not bound. Try again in a moment.")
+                    return@launch
+                }
+            }
+            val finalService = AutoMateAccessibilityService.instance!!
 
             var attempts = 0
             val maxAttempts = 20
@@ -603,7 +637,7 @@ class TaskRunner @Inject constructor(
                 Log.i(TAG, "Time-out attempt $attempts/$maxAttempts")
 
                 // Step 1-4: Launch Beehive and detect (same as time-in)
-                val beehiveReady = launchBeehiveAndDetect(service)
+                val beehiveReady = launchBeehiveAndDetect(finalService)
                 if (!beehiveReady) {
                     Log.w(TAG, "Beehive not ready for time-out, retrying...")
                     delay(1000)
@@ -611,19 +645,18 @@ class TaskRunner @Inject constructor(
                 }
 
                 // Step 5: Click SIGN IN if needed (session may have expired)
-                val screenText = service.getScreenText()
+                val screenText = finalService.getScreenText()
                 val needsLogin = screenText.contains("SIGN IN", ignoreCase = true) &&
                         screenText.contains("Password", ignoreCase = true)
 
                 if (needsLogin) {
                     Log.i(TAG, "Login required for time-out, signing in...")
-                    clickSignIn(service)
+                    clickSignIn(finalService)
                     delay(1000)
                 }
 
                 // Step 6: Find and click TIME OUT
-                val clicked = findAndClickTarget(
-                    service, "TIME OUT",
+                val clicked = findAndClickTarget(finalService, "TIME OUT",
                     "Attendance", "Mark Attendance", "Dashboard", "HOME"
                 )
 
@@ -669,7 +702,7 @@ class TaskRunner @Inject constructor(
 
         while (attempts < 30) {
             attempts++
-            val screenText = service.getScreenText()
+            val screenText = finalService.getScreenText()
 
             // SUCCESS detection
             val hasRecorded = screenText.contains("recorded", ignoreCase = true)

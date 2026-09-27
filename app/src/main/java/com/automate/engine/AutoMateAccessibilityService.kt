@@ -2,9 +2,12 @@ package com.automate.engine
 
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.graphics.Path
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -432,6 +435,27 @@ class AutoMateAccessibilityService : AccessibilityService() {
             return instance ?: throw IllegalStateException(
                 "Accessibility Service not running. Enable it in Settings > Accessibility > AutoMate."
             )
+        }
+
+        fun isEnabled(context: Context): Boolean {
+            val serviceComponent = ComponentName(context, AutoMateAccessibilityService::class.java).flattenToShortString()
+            val enabledServices = Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: ""
+            if (enabledServices.contains(serviceComponent)) return true
+            try {
+                val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
+                val enabledServicesList = am.getEnabledAccessibilityServiceList(
+                    android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_GENERIC
+                )
+                for (serviceInfo in enabledServicesList) {
+                    if (serviceInfo.resolveInfo.serviceInfo?.packageName == context.packageName) {
+                        return true
+                    }
+                }
+            } catch (_: Exception) {}
+            return false
         }
     }
 }

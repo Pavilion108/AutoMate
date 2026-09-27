@@ -171,10 +171,21 @@ fun LocationStep(onNext: () -> Unit) {
 
     LaunchedEffect(Unit) {
         // Check location permission
-        hasLocationPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+        val fine = androidx.core.content.ContextCompat.checkSelfPermission(
             context,
             android.Manifest.permission.ACCESS_FINE_LOCATION
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val coarse = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val background = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        } else true
+        hasLocationPermission = fine && coarse && background
     }
 
     Column(
@@ -206,9 +217,10 @@ fun LocationStep(onNext: () -> Unit) {
                 activity?.requestPermissions(
                     arrayOf(
                         android.Manifest.permission.ACCESS_FINE_LOCATION,
-                        android.Manifest.permission.ACCESS_COARSE_LOCATION,
-                        android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
-                    ),
+                        android.Manifest.permission.ACCESS_COARSE_LOCATION
+                    ) + (if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        arrayOf(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    } else arrayOf()),
                     1001
                 )
             }) {

@@ -86,8 +86,18 @@ class ActionExecutor @Inject constructor(
             "com.app.beehivehrms" to "com.tns.NativeScriptActivity"
         )
 
-        // Strategy 1: Shell am start (most reliable on MIUI)
+        // Check if app is installed first
+        val pm = context.packageManager
+        if (pm.getLaunchIntentForPackage(packageName) == null &&
+            pm.queryIntentActivities(Intent().apply { setPackage(packageName) }, 0).isEmpty()) {
+            Log.w(TAG, "App not installed: $packageName")
+            showAppNotInstalledNotification(packageName)
+            return false
+        }
+
         val activityClass = knownActivities[packageName]
+
+        // Strategy 1: Shell am start (most reliable on MIUI)
         if (activityClass != null) {
             try {
                 val process = Runtime.getRuntime().exec(arrayOf(
@@ -106,7 +116,7 @@ class ActionExecutor @Inject constructor(
 
         // Strategy 2: Standard launch intent
         try {
-            val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+            val intent = pm.getLaunchIntentForPackage(packageName)
             if (intent != null) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 context.startActivity(intent)
@@ -132,8 +142,45 @@ class ActionExecutor @Inject constructor(
             }
         }
 
-        Log.w(TAG, "App not found: $packageName")
+        Log.w(TAG, "App launch failed: $packageName")
+        showLaunchFailedNotification(packageName)
         return false
+    }
+
+    private fun showAppNotInstalledNotification(packageName: String) {
+        val intent = Intent(context, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            context, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(context, AutoMateApp.CHANNEL_TASK_STATUS)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("App Not Installed")
+            .setContentText("$packageName is not installed on this device.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(9995, notification)
+    }
+
+    private fun showLaunchFailedNotification(packageName: String) {
+        val intent = Intent(context, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            context, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(context, AutoMateApp.CHANNEL_TASK_STATUS)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("Launch Failed")
+            .setContentText("Could not open $packageName. Is it installed?")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(9994, notification)
     }
 
     private fun killApp(packageName: String): Boolean {

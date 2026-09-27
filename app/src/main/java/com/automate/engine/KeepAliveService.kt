@@ -181,35 +181,7 @@ class KeepAliveService : Service() {
     // === Accessibility Detection ===
 
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val serviceComponent = ComponentName(this, AutoMateAccessibilityService::class.java).flattenToShortString()
-
-        // Method 1: Check Settings.Secure (works on all versions)
-        val enabledServices = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: ""
-
-        if (enabledServices.contains(serviceComponent)) return true
-
-        // Method 2: Check if our instance is alive
-        if (AutoMateAccessibilityService.instance != null) return true
-
-        // Method 3: Check via accessibility manager
-        try {
-            val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
-            val enabledServicesList = am.getEnabledAccessibilityServiceList(
-                android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_GENERIC
-            )
-            for (serviceInfo in enabledServicesList) {
-                if (serviceInfo.resolveInfo.serviceInfo?.packageName == packageName) {
-                    return true
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "AccessibilityManager check failed", e)
-        }
-
-        return false
+        return AutoMateAccessibilityService.isEnabled(this)
     }
 
     // === Re-enable Strategies ===

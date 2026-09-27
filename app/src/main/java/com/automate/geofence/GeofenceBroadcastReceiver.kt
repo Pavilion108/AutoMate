@@ -78,13 +78,13 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             // Manual test: trigger time-in flow directly
             "TEST_TIME_IN" -> {
                 Log.i(TAG, "Test mode: triggering time-in flow")
-                taskRunner.startTimeInFlow()
+                scope.launch { taskRunner.startTimeInFlow() }
             }
 
             // Manual test: trigger time-out flow directly
             "TEST_TIME_OUT" -> {
                 Log.i(TAG, "Test mode: triggering time-out flow")
-                taskRunner.performTimeOut()
+                scope.launch { taskRunner.performTimeOut() }
             }
 
             // Manual test: send morning prompt
