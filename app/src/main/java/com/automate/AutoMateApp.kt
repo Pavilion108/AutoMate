@@ -1,6 +1,7 @@
 package com.automate
 
 import android.app.Application
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
@@ -129,7 +130,25 @@ class AutoMateApp : Application() {
             setShowBadge(false)
         }
 
-        manager.createNotificationChannels(listOf(morningPrompt, taskStatus, locationAlert, keepAlive))
+        // Background activity launches are refused on Android 10+ ("Abort background
+        // activity starts"), and MIUI enforces it even with SYSTEM_ALERT_WINDOW granted.
+        // A high-importance channel carrying a full-screen intent is the supported way to
+        // bring Beehive to the front from the background, so it must exist up front.
+        val launch = NotificationChannel(
+            CHANNEL_APP_LAUNCH,
+            "App Launch",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Used by AutoMate to open other apps for attendance"
+            setBypassDnd(true)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            enableVibration(false)
+            setSound(null, null)
+        }
+
+        manager.createNotificationChannels(
+            listOf(morningPrompt, taskStatus, locationAlert, keepAlive, launch)
+        )
     }
 
     companion object {
@@ -138,5 +157,6 @@ class AutoMateApp : Application() {
         const val CHANNEL_TASK_STATUS = "task_status"
         const val CHANNEL_LOCATION_ALERT = "location_alert"
         const val CHANNEL_KEEP_ALIVE = "keep_alive"
+        const val CHANNEL_APP_LAUNCH = "app_launch"
     }
 }

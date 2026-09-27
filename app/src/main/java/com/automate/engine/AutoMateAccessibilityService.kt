@@ -632,5 +632,14 @@ class AutoMateAccessibilityService : AccessibilityService() {
 
         /** True once the OS has actually bound us, meaning UI automation can run. */
         val isBound: Boolean get() = instance != null
+
+        /**
+         * Whether [packageName] currently owns a window, checked without needing a bound
+         * service instance. Used while waiting for a full-screen intent to land.
+         */
+        fun isPackageForegroundStatic(packageName: String): Boolean {
+            val svc = instance ?: return false
+            return svc.isPackageForeground(packageName)
+        }
     }
 }

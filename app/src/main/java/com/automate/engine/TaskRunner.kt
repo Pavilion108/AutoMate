@@ -37,6 +37,7 @@ class TaskRunner @Inject constructor(
         private const val TAG = "TaskRunner"
         private const val BEEHIVE_PACKAGE = "com.app.beehivehrms"
         private const val BEEHIVE_ACTIVITY = "com.tns.NativeScriptActivity"
+        private const val LAUNCH_NOTIFICATION_ID = 7788
 
         // Beehive detection keywords — any of these on screen means Beehive is loaded
         private val BEEHIVE_INDICATORS = listOf(
@@ -207,11 +208,14 @@ class TaskRunner @Inject constructor(
             Log.w(TAG, "killBackgroundProcesses failed: ${e.message}")
         }
 
-        // Launch through the accessibility service. Calling startActivity() from the app
-        // itself is refused by Android 10+ ("Abort background activity starts"), so the
-        // target app never opens. No performGlobalHome() here: going home first is what
+        // Launch through the accessibility service first, then fall back to a
+        // full-screen intent. No performGlobalHome() here: going home first is what
         // guaranteed we were in the background when the launch was rejected.
-        if (!launchApp(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY, service)) {
+        var launched = launchApp(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY, service)
+        if (!launched) {
+            launched = launchViaFullScreenIntent(BEEHIVE_PACKAGE, BEEHIVE_ACTIVITY)
+        }
+        if (!launched) {
             showStatusNotification("Error", "Beehive is not installed or could not be opened.")
             return false
         }
@@ -236,6 +240,64 @@ class TaskRunner @Inject constructor(
 
         Log.w(TAG, "Beehive not detected after 15 polls")
         return false
+    }
+
+    /**
+     * Last-resort launcher: a full-screen intent on a high-importance channel.
+     *
+     * This is the only mechanism that reliably brings another app to the foreground from
+     * the background on Android 10+ (and MIUI in particular), where startActivity() is
+     * refused with "Abort background activity starts". Returns true once the target
+     * package actually owns the focused window.
+     */
+    private suspend fun launchViaFullScreenIntent(packageName: String, activityClass: String): Boolean {
+        if (!isInstalled(packageName)) return false
+
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return false
+        val intent = Intent().setComponent(ComponentName(packageName, activityClass)).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP
+            )
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context, LAUNCH_NOTIFICATION_ID, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, AutoMateApp.CHANNEL_APP_LAUNCH)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("AutoMate")
+            .setContentText("Opening Beehive for your attendance check-in")
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setFullScreenIntent(pendingIntent, true)
+            .setAutoCancel(true)
+            .setOngoing(false)
+            .build()
+
+        return try {
+            manager.notify(LAUNCH_NOTIFICATION_ID, notification)
+            Log.i(TAG, "Posted full-screen intent for $packageName")
+
+            // Wait for the system to actually bring it forward.
+            var focused = false
+            repeat(15) {
+                delay(1000)
+                if (AutoMateAccessibilityService.isPackageForegroundStatic(packageName)) {
+                    focused = true
+                    return@repeat
+                }
+            }
+            manager.cancel(LAUNCH_NOTIFICATION_ID)
+            Log.i(TAG, "Full-screen intent focus=$focused for $packageName")
+            focused
+        } catch (e: Exception) {
+            Log.e(TAG, "Full-screen intent launch failed", e)
+            try { manager.cancel(LAUNCH_NOTIFICATION_ID) } catch (_: Exception) {}
+            false
+        }
     }
 
     /**
