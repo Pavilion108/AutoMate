@@ -59,7 +59,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
             // Time-out trigger (from alarm)
             "TIME_OUT_TRIGGER" -> {
-                taskRunner.performTimeOut()
+                scope.launch { taskRunner.performTimeOut() }
             }
 
             // Refresh location — force immediate GPS fix

@@ -250,7 +250,7 @@ class TaskRunner @Inject constructor(
             delay(1000)
 
             // Check if page changed
-            val afterText = finalService.getScreenText()
+            val afterText = service.getScreenText()
             if (afterText.contains("SIGN IN") && afterText.contains("Remember Me")) {
                 // Still on login — try coordinate click
                 Log.w(TAG, "Still on login, trying coordinate click")
@@ -268,7 +268,7 @@ class TaskRunner @Inject constructor(
 
     // === Shared: Find and click a target button with navigation fallback ===
 
-    private suspend fun findAndClickTarget(finalService, 
+    private suspend fun findAndClickTarget(
         service: AutoMateAccessibilityService,
         target: String,
         vararg fallbackNavTexts: String
@@ -364,7 +364,7 @@ class TaskRunner @Inject constructor(
                 delay(1000) // Wait for page transition
 
                 // Check if we're past login
-                val afterLoginText = finalService.getScreenText()
+                val afterLoginText = service.getScreenText()
                 Log.i(TAG, "After login: ${afterLoginText.take(300)}")
 
                 // Step 6: Find and click TIME IN (with nav fallbacks)
