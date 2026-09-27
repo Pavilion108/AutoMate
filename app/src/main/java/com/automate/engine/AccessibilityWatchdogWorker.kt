@@ -27,22 +27,8 @@ class AccessibilityWatchdogWorker(
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val serviceComponent = ComponentName(
-            applicationContext,
-            AutoMateAccessibilityService::class.java
-        ).flattenToShortString()
-
-        val enabledServices = Settings.Secure.getString(
-            applicationContext.contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: ""
-
-        if (enabledServices.contains(serviceComponent)) return true
-
-        // Also check if instance is alive
-        if (AutoMateAccessibilityService.instance != null) return true
-
-        return false
+        return AutoMateAccessibilityService.isEnabled(applicationContext) ||
+            AutoMateAccessibilityService.isBound
     }
 
     private fun attemptReenable() {
@@ -51,7 +37,8 @@ class AccessibilityWatchdogWorker(
             AutoMateAccessibilityService::class.java
         ).flattenToShortString()
 
-        // Try Settings.Secure write
+        // WRITE_SECURE_SETTINGS is signature|privileged, so this essentially never
+        // succeeds for a normal install. It is kept only for rooted/privileged setups.
         try {
             Settings.Secure.putString(
                 applicationContext.contentResolver,
@@ -63,30 +50,42 @@ class AccessibilityWatchdogWorker(
                 Settings.Secure.ACCESSIBILITY_ENABLED,
                 1
             )
-            Log.i(TAG, "Accessibility re-enabled via WorkManager")
-            return
+            if (AutoMateAccessibilityService.isEnabled(applicationContext)) {
+                Log.i(TAG, "Accessibility re-enabled via Settings.Secure")
+                return
+            }
+            Log.w(TAG, "Settings.Secure write was accepted but did not take effect")
         } catch (e: SecurityException) {
             Log.d(TAG, "WRITE_SECURE_SETTINGS not available in worker")
         } catch (e: Exception) {
             Log.w(TAG, "Settings.Secure write failed in worker", e)
         }
 
-        // Try shell command
+        // Shell fallback. The old code logged success unconditionally, which hid the
+        // fact that `settings put` fails from an app UID. Check the exit code and, more
+        // importantly, re-read the setting to confirm the OS actually accepted it.
         try {
-            val process = Runtime.getRuntime().exec(arrayOf(
-                "settings", "put", "secure", "enabled_accessibility_services", serviceComponent
-            ))
-            process.waitFor()
-            Runtime.getRuntime().exec(arrayOf(
-                "settings", "put", "secure", "accessibility_enabled", "1"
-            )).waitFor()
-            Log.i(TAG, "Accessibility re-enabled via shell in worker")
+            runCatching {
+                Runtime.getRuntime()
+                    .exec(arrayOf("settings", "put", "secure", "enabled_accessibility_services", serviceComponent))
+                    .waitFor()
+                Runtime.getRuntime()
+                    .exec(arrayOf("settings", "put", "secure", "accessibility_enabled", "1"))
+                    .waitFor()
+            }.onFailure { Log.d(TAG, "Shell rebind threw: ${it.message}") }
+
+            if (AutoMateAccessibilityService.isEnabled(applicationContext)) {
+                Log.i(TAG, "Accessibility re-enabled via shell in worker")
+                return
+            }
+            Log.w(TAG, "Shell rebind did not take effect — manual enable required")
         } catch (e: Exception) {
             Log.d(TAG, "Shell rebind failed in worker")
         }
 
-        // Notify the KeepAliveService to handle user-facing rebind
-        KeepAliveService.checkAndRebind(applicationContext)
+        // Cannot self-grant accessibility on stock Android. Tell the user once,
+        // with a notification, instead of silently failing or stealing focus.
+        AccessibilityNotifier.postActionRequired(applicationContext)
     }
 
     companion object {

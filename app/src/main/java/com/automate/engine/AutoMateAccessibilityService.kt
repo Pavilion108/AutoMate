@@ -125,6 +125,101 @@ class AutoMateAccessibilityService : AccessibilityService() {
         return null
     }
 
+    /**
+     * Finds the best actionable node for [text].
+     *
+     * A plain text match is not enough: Beehive's tree contains labels and stubs such as
+     * "HOME" with bounds [0,0][0,0] and zero-height rows. Clicking those silently does
+     * nothing, which used to burn every retry and then relaunch the app. So we require the
+     * node to be visible, non-degenerate, and prefer a clickable ancestor.
+     */
+    fun findActionableNode(
+        text: String,
+        packageName: String? = null,
+        exact: Boolean = true,
+        excludeContaining: List<String> = emptyList()
+    ): AccessibilityNodeInfo? {
+        val root = rootInActiveWindow ?: return null
+        if (packageName != null && root.packageName?.toString() != packageName) {
+            return null
+        }
+
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        collectActionable(root, text, exact, excludeContaining, candidates, 0)
+
+        if (candidates.isEmpty()) return null
+
+        // Prefer: clickable > enabled > on-screen > larger area (more likely the real control)
+        return candidates.maxByOrNull { node ->
+            val r = android.graphics.Rect()
+            node.getBoundsInScreen(r)
+            var score = 0L
+            if (node.isClickable) score += 1_000_000_000L
+            if (node.isEnabled) score += 100_000_000L
+            score += r.width().toLong() * r.height()
+        }
+    }
+
+    private fun collectActionable(
+        node: AccessibilityNodeInfo,
+        text: String,
+        exact: Boolean,
+        excludeContaining: List<String>,
+        out: MutableList<AccessibilityNodeInfo>,
+        depth: Int
+    ) {
+        if (depth > 40) return
+
+        val nodeText = node.text?.toString() ?: ""
+        val match = if (exact) {
+            nodeText.trim().equals(text, ignoreCase = true)
+        } else {
+            nodeText.contains(text, ignoreCase = true)
+        }
+
+        if (match && !excludeContaining.any { nodeText.contains(it, ignoreCase = true) }) {
+            val r = android.graphics.Rect()
+            node.getBoundsInScreen(r)
+            val visible = node.isVisibleToUser && r.width() > 0 && r.height() > 0
+            if (visible) {
+                out.add(node)
+                // A clickable ancestor is the real tap target; stop descending.
+                if (node.isClickable) return
+            }
+        }
+
+        for (i in 0 until node.childCount) {
+            collectActionable(node.getChild(i) ?: continue, text, exact, excludeContaining, out, depth + 1)
+        }
+    }
+
+    /** True when the node is on screen with a usable tap area. */
+    fun isTappable(node: AccessibilityNodeInfo): Boolean {
+        val r = android.graphics.Rect()
+        node.getBoundsInScreen(r)
+        return node.isVisibleToUser && r.width() > 0 && r.height() > 0
+    }
+
+    /** Clicks a node, walking up to a clickable ancestor, then falling back to a tap. */
+    fun clickNodeRobustly(node: AccessibilityNodeInfo): Boolean {
+        var current: AccessibilityNodeInfo? = node
+        var hops = 0
+        while (current != null && hops < 5) {
+            if (current.isVisibleToUser && current.isClickable) {
+                if (current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+            }
+            current = current.parent
+            hops++
+        }
+        val r = android.graphics.Rect()
+        node.getBoundsInScreen(r)
+        if (r.width() > 0 && r.height() > 0) {
+            tapAtCoordinates(r.centerX(), r.centerY())
+            return true
+        }
+        return false
+    }
+
     fun findNodeById(resourceId: String): AccessibilityNodeInfo? {
         val root = rootInActiveWindow ?: return null
         val nodes = root.findAccessibilityNodeInfosByViewId(resourceId)

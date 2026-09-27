@@ -34,6 +34,7 @@ class KeepAliveService : Service() {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var watchdogJob: Job? = null
     private var rebindAttempts = 0
+    private var actionRequiredShown = false
     private var wakeLock: PowerManager.WakeLock? = null
 
     // Foreground GPS location tracking (true 3-second intervals)
@@ -139,39 +140,49 @@ class KeepAliveService : Service() {
                 delay(WATCHDOG_INTERVAL_MS)
 
                 val accEnabled = isAccessibilityServiceEnabled()
+                AccessibilityNotifier.clear(this@KeepAliveService)
 
                 if (!accEnabled) {
                     rebindAttempts++
                     Log.w(TAG, "Accessibility OFF (attempt $rebindAttempts)")
 
-                    // Strategy escalation based on attempt count
+                    // Escalation: try the API route, then the shell route, then stop.
+                    // The old code launched the Accessibility Settings activity on every
+                    // pass, which stole focus every 10s and looked like a crash loop.
                     when {
-                        rebindAttempts <= 3 -> {
-                            // Try lightweight re-enable methods
-                            attemptRebind()
-                        }
+                        rebindAttempts <= 3 -> attemptRebind()
                         rebindAttempts <= 8 -> {
-                            // Try more aggressive methods
                             attemptRebind()
-                            // Also try starting via shell (works on some devices)
                             tryShellRebind()
                         }
                         else -> {
-                            // Last resort: open accessibility settings for user
-                            Log.w(TAG, "Auto-rebind failed after $rebindAttempts attempts, opening settings")
-                            openAccessibilitySettings()
-                            rebindAttempts = 0 // Reset to avoid spamming settings
-                            delay(30_000) // Wait 30s before checking again
+                            // Genuinely blocked: accessibility cannot be self-granted.
+                            // Ask the user once instead of nagging or hijacking the UI.
+                            if (!actionRequiredShown) {
+                                Log.w(TAG, "Auto-rebind impossible after $rebindAttempts attempts, notifying user")
+                                AccessibilityNotifier.postActionRequired(this@KeepAliveService)
+                                actionRequiredShown = true
+                            }
+                            rebindAttempts = 0
+                            delay(5 * 60_000L)
+                            continue
                         }
+                    }
+
+                    // Verify rather than assume: only claim success if the OS agrees.
+                    if (isAccessibilityServiceEnabled()) {
+                        rebindAttempts = 0
+                        actionRequiredShown = false
+                        Log.i(TAG, "Accessibility re-enabled")
                     }
                 } else {
                     if (rebindAttempts > 0) {
                         Log.i(TAG, "Accessibility recovered after $rebindAttempts attempts")
                     }
                     rebindAttempts = 0
+                    actionRequiredShown = false
                 }
 
-                // Update notification with current status
                 val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
                 manager.notify(NOTIFICATION_ID, buildNotification())
             }
@@ -201,49 +212,46 @@ class KeepAliveService : Service() {
                 Settings.Secure.ACCESSIBILITY_ENABLED,
                 1
             )
-            Log.i(TAG, "Re-enabled via Settings.Secure")
-            return
+            if (isAccessibilityServiceEnabled()) {
+                Log.i(TAG, "Re-enabled via Settings.Secure")
+                return
+            }
+            Log.w(TAG, "Settings.Secure write accepted but had no effect")
         } catch (e: SecurityException) {
             Log.d(TAG, "WRITE_SECURE_SETTINGS not available")
         } catch (e: Exception) {
             Log.w(TAG, "Settings.Secure write failed", e)
         }
 
-        // Method 2: Request accessibility service to rebind itself
+        // Method 2: Ask the framework to bind us. Fails while the service is switched
+        // off in Settings, which is the normal case — expected, not an error.
         try {
-            val intent = Intent(this, AutoMateAccessibilityService::class.java)
-            startService(intent)
-            Log.i(TAG, "Tried direct service start")
+            startService(Intent(this, AutoMateAccessibilityService::class.java))
+            Log.d(TAG, "Requested direct service start")
         } catch (e: Exception) {
             Log.d(TAG, "Direct service start failed (expected if disabled)")
         }
 
-        // Method 3: Try enabling via accessibility settings intent with component
-        try {
-            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            startActivity(intent)
-            Log.i(TAG, "Opened accessibility settings for user")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to open accessibility settings", e)
-        }
+        // Deliberately no startActivity() here. Launching Accessibility Settings from a
+        // background service is what made AutoMate appear to hijack the screen.
     }
 
     private fun tryShellRebind() {
         val serviceString = ComponentName(this, AutoMateAccessibilityService::class.java).flattenToShortString()
 
         try {
-            // This works on devices where the app has shell-level permissions
             val process = Runtime.getRuntime().exec(arrayOf(
                 "settings", "put", "secure", "enabled_accessibility_services", serviceString
             ))
             val exitCode = process.waitFor()
-            if (exitCode == 0) {
-                Runtime.getRuntime().exec(arrayOf(
-                    "settings", "put", "secure", "accessibility_enabled", "1"
-                )).waitFor()
+            Runtime.getRuntime().exec(arrayOf(
+                "settings", "put", "secure", "accessibility_enabled", "1"
+            )).waitFor()
+            // Exit code alone is not proof; confirm against the OS.
+            if (exitCode == 0 && isAccessibilityServiceEnabled()) {
                 Log.i(TAG, "Re-enabled via shell command")
+            } else {
+                Log.w(TAG, "Shell rebind had no effect (exit=$exitCode)")
             }
         } catch (e: Exception) {
             Log.d(TAG, "Shell rebind failed (expected without root)")
