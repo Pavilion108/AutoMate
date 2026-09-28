@@ -55,16 +55,25 @@ jobs:
       - name: Build Release APK
         run: ./gradlew clean assembleRelease
 
-      - name: Get version name
-        id: version
-        run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      - name: Resolve release tag
+        id: tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [ "$TAG" = "$GITHUB_REF" ]; then
+            TAG="ci-${{ github.run_number }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "name=AutoMate $TAG" >> "$GITHUB_OUTPUT"
 
       - name: Upload Release APK
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.name }}
+          draft: true
           files: app/build/outputs/apk/release/*.apk
           body: |
-            AutoMate ${{ steps.version.outputs.tag }}
+            AutoMate ${{ steps.tag.outputs.tag }} (release-signed, non-debuggable)
 
             ## Installation
             1. Download the APK below
