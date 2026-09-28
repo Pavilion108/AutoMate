@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -39,7 +41,7 @@ android {
             // machine (back it up!). Missing it fails the release build loudly rather than
             // silently shipping an unsigned or debug APK.
             val keyFile = file("/home/polzovatel/.automate-release/keystore.properties")
-            val props = java.util.Properties()
+            val props = Properties()
             if (keyFile.exists()) {
                 keyFile.inputStream().use { props.load(it) }
             }
