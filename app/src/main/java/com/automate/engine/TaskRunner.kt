@@ -54,9 +54,12 @@ class TaskRunner @Inject constructor(
 
         // Beehive detection keywords — any of these on screen means Beehive is loaded
         private val BEEHIVE_INDICATORS = listOf(
+            // Login screen
             "E0099", "Remember Me", "Forgot Password", "App Ver",
             "SIGN IN", "Password", "Employee", "Login",
-            "beehive", "Beehive", "HRMS"
+            "beehive", "Beehive", "HRMS",
+            // Signed-in dashboard: v2.9.x greets the user and shows attendance columns.
+            "Dashboard", "Hi,", "IN TIME", "OUT TIME", "Quick info"
         )
     }
 
