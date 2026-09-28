@@ -14,6 +14,7 @@ import com.automate.domain.model.ActionType
 import com.automate.domain.model.Constraint
 import com.automate.domain.model.ConstraintOperator
 import com.automate.domain.model.Task
+import android.view.accessibility.AccessibilityNodeInfo
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import javax.inject.Inject
@@ -526,8 +527,7 @@ class TaskRunner @Inject constructor(
      */
     private suspend fun settleDashboard(service: AutoMateAccessibilityService) {
         repeat(10) {
-            val node = service.findActionableNode("TIME IN", BEEHIVE_PACKAGE) ?:
-                service.findActionableNode("TIME OUT", BEEHIVE_PACKAGE)
+            val node = findAttendanceNode(service, "IN") ?: findAttendanceNode(service, "OUT")
             if (node != null) {
                 Log.i(TAG, "Dashboard laid out")
                 return
@@ -535,6 +535,22 @@ class TaskRunner @Inject constructor(
             delay(1000)
         }
         Log.w(TAG, "Dashboard did not expose an actionable attendance button in time")
+    }
+
+    /**
+     * Beehive's dashboard spells the columns "IN TIME" / "OUT TIME" on recent builds
+     * (v2.9.x), while older builds handed out "TIME IN" / "TIME OUT". Tolerating both
+     * spellings is what keeps the attendance button reachable regardless of the version.
+     */
+    private suspend fun findAttendanceNode(
+        service: AutoMateAccessibilityService,
+        which: String // "IN" for clock-in, "OUT" for clock-out
+    ): AccessibilityNodeInfo? {
+        val label = if (which == "IN") "IN TIME" else "OUT TIME"
+        val reversed = if (which == "IN") "TIME IN" else "TIME OUT"
+        return service.findActionableNode(reversed, BEEHIVE_PACKAGE)
+            ?: service.findActionableNode(label, BEEHIVE_PACKAGE)
+            ?: service.findActionableNode(label, BEEHIVE_PACKAGE, exact = false)
     }
 
     // === Smart Time-In Flow ===
@@ -569,7 +585,9 @@ class TaskRunner @Inject constructor(
         return text.contains("Hi,", ignoreCase = true) ||
             text.contains("MY TEAM", ignoreCase = true) ||
             text.contains("TIME IN", ignoreCase = true) ||
-            text.contains("TIME OUT", ignoreCase = true)
+            text.contains("TIME OUT", ignoreCase = true) ||
+            text.contains("IN TIME", ignoreCase = true) ||
+            text.contains("OUT TIME", ignoreCase = true)
     }
 
     private suspend fun waitForScreen(
@@ -677,8 +695,7 @@ class TaskRunner @Inject constructor(
             // Dry run proves the whole path — wake, launch, sign in, find the button —
             // without submitting anything. Used for verification on a live account.
             if (isDryRun()) {
-                val probe = service.findActionableNode("TIME IN", BEEHIVE_PACKAGE)
-                    ?: service.findActionableNode("TIME IN", BEEHIVE_PACKAGE, exact = false)
+                val probe = findAttendanceNode(service, "IN")
                 if (probe != null) {
                     val r = android.graphics.Rect()
                     probe.getBoundsInScreen(r)
@@ -696,8 +713,7 @@ class TaskRunner @Inject constructor(
                 // Re-resolve the node rather than caching: a dead service throws on every
                 // use, so each tap attempt must start from a bound service.
                 val live = awaitBoundService() ?: return@repeat
-                val target = live.findActionableNode("TIME IN", BEEHIVE_PACKAGE)
-                    ?: live.findActionableNode("TIME IN", BEEHIVE_PACKAGE, exact = false)
+                val target = findAttendanceNode(live, "IN")
                 if (target != null) {
                     Log.i(TAG, "Found TIME IN (attempt $tapAttempt), clicking")
                     clicked = live.clickNodeRobustly(target)
@@ -964,7 +980,7 @@ class TaskRunner @Inject constructor(
 
             var clicked = false
             for (attempt in 1..3) {
-                val target = service.findActionableNode("TIME OUT", BEEHIVE_PACKAGE)
+                val target = findAttendanceNode(service, "OUT")
                 if (target != null) {
                     Log.i(TAG, "Found TIME OUT (attempt $attempt), clicking")
                     clicked = service.clickNodeRobustly(target)
