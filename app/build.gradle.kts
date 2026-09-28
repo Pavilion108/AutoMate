@@ -35,8 +35,14 @@ android {
         // machine (back it up!). Missing it fails the release build loudly rather than
         // silently shipping an unsigned or debug APK.
         create("release") {
-            val props = rootProject.file("../.automate-release/keystore.properties")
-                .let { java.util.Properties().apply { if (it.exists()) it.inputStream().use { load(it) } } }
+            // Release signing is external to the repo. The keystore lives only on this
+            // machine (back it up!). Missing it fails the release build loudly rather than
+            // silently shipping an unsigned or debug APK.
+            val keyFile = file("/home/polzovatel/.automate-release/keystore.properties")
+            val props = java.util.Properties()
+            if (keyFile.exists()) {
+                keyFile.inputStream().use { props.load(it) }
+            }
             storeFile = file(props.getProperty("storeFile", "DOES_NOT_EXIST"))
             storePassword = props.getProperty("storePassword", "DOES_NOT_EXIST")
             keyAlias = props.getProperty("keyAlias", "DOES_NOT_EXIST")
