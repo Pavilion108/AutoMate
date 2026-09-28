@@ -101,6 +101,12 @@ fun DashboardScreen(
                     )
                     QuickActionButton(
                         modifier = Modifier.weight(1f),
+                        icon = Icons.Default.Check,
+                        label = "Clocked In",
+                        onClick = { viewModel.recordManualTimeIn() }
+                    )
+                    QuickActionButton(
+                        modifier = Modifier.weight(1f),
                         icon = Icons.Default.Stop,
                         label = "Time Out",
                         onClick = { viewModel.performTimeOut() }

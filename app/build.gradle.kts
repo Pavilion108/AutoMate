@@ -30,6 +30,18 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+
+        // Release signing is external to the repo. The keystore lives only on this
+        // machine (back it up!). Missing it fails the release build loudly rather than
+        // silently shipping an unsigned or debug APK.
+        create("release") {
+            val props = rootProject.file("../.automate-release/keystore.properties")
+                .let { java.util.Properties().apply { if (it.exists()) it.inputStream().use { load(it) } } }
+            storeFile = file(props.getProperty("storeFile", "DOES_NOT_EXIST"))
+            storePassword = props.getProperty("storePassword", "DOES_NOT_EXIST")
+            keyAlias = props.getProperty("keyAlias", "DOES_NOT_EXIST")
+            keyPassword = props.getProperty("keyPassword", "DOES_NOT_EXIST")
+        }
     }
 
     buildTypes {
@@ -39,6 +51,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

@@ -594,45 +594,76 @@ class TaskRunner @Inject constructor(
      * could switch the day back on, which is the behaviour the user asked to remove. A
      * geofence entry only reaches this function when the day is already armed.
      */
+    /**
+     * Runs the clock-in sequence with an accessibility service that can die at any point.
+     *
+     * MIUI kills this app's process under memory pressure (verified via `exit-info`), and
+     * killing a process mid-flow used to take the coroutine down with it: no retry, no
+     * notification, just Beehive left on the sign-in screen with TIME IN never clicked.
+     * Every failure path now either retries against a freshly re-bound service or posts a
+     * clear "Time-In Failed" notification. This method never fails silently.
+     */
     suspend fun startTimeInFlow(accountId: Long = 0) {
         timeInJob?.cancel()
         timeInJob = scope.launch {
-            Log.i(TAG, "Starting smart time-in flow")
+            runCatching {
+                executeTimeInFlow(accountId)
+            }.onFailure { e ->
+                Log.e(TAG, "Time-in flow failed", e)
+                showStatusNotification(
+                    "Time-In Failed",
+                    "The automation stopped unexpectedly: ${e.message ?: e.javaClass.simpleName}. Please tap Time In manually."
+                )
+            }
+        }
+    }
+
+    private suspend fun executeTimeInFlow(accountId: Long) {
+        // Launching and reading are the two points where the process can be killed. Each
+        // gets a bounded retry against a freshly re-bound service rather than a stall.
+        repeat(3) { attempt ->
+            Log.i(TAG, "Starting smart time-in flow (attempt ${attempt + 1})")
             variableStore.setTimedInToday(false)
 
             val context = context
             if (!AutoMateAccessibilityService.isEnabled(context)) {
                 showStatusNotification("Error", "Accessibility service not enabled. Open Settings > Accessibility > AutoMate.")
                 AccessibilityNotifier.postActionRequired(context)
-                return@launch
+                return
             }
 
+            // If a previous run was killed mid-flow, the old service instance may still be
+            // referenced in memory but dead remotely. Always re-resolve the active one.
+            if (AutoMateAccessibilityService.instance == null) {
+                AccessibilityWatchdogWorker.enqueue(context)
+                delay(1500)
+            }
             val service = awaitBoundService()
             if (service == null) {
-                showStatusNotification("Error", "Accessibility service not bound. Try again in a moment.")
-                return@launch
+                Log.w(TAG, "Accessibility service not bound after wait")
+                AccessibilityNotifier.postActionRequired(context)
+                delay(3000)
+                return@repeat
             }
 
             // Launch Beehive exactly once. The old loop relaunched it on every failure
             // (up to 20x), which is what made Beehive keep popping open on the user.
             if (!launchBeehiveAndDetect(service)) {
-                showStatusNotification("Time-In Failed", "Could not open Beehive.")
-                return@launch
+                delay(2500)
+                return@repeat
             }
 
             // Sign in only when genuinely on the login screen.
             if (isLoginScreen(service)) {
                 if (!clickSignIn(service)) {
-                    showStatusNotification("Time-In Failed", "Could not sign in to Beehive.")
-                    return@launch
+                    return@repeat
                 }
                 val movedOn = waitForScreen(service, 25_000) { text ->
                     isDashboardVisible(service) || !text.contains("SIGN IN", ignoreCase = true)
                 }
                 if (!movedOn) {
                     Log.w(TAG, "Still on login screen after SIGN IN")
-                    showStatusNotification("Time-In Failed", "Sign-in did not complete.")
-                    return@launch
+                    return@repeat
                 }
             } else {
                 Log.i(TAG, "Already signed in - skipping login step")
@@ -657,26 +688,28 @@ class TaskRunner @Inject constructor(
                     Log.w(TAG, "DRY RUN: reached dashboard but TIME IN was not actionable")
                     showStatusNotification("Dry run", "Reached dashboard, TIME IN not found.")
                 }
-                return@launch
+                return
             }
 
             var clicked = false
-            for (attempt in 1..6) {
-                val target = service.findActionableNode("TIME IN", BEEHIVE_PACKAGE)
-                    ?: service.findActionableNode("TIME IN", BEEHIVE_PACKAGE, exact = false)
+            for (tapAttempt in 1..6) {
+                // Re-resolve the node rather than caching: a dead service throws on every
+                // use, so each tap attempt must start from a bound service.
+                val live = awaitBoundService() ?: return@repeat
+                val target = live.findActionableNode("TIME IN", BEEHIVE_PACKAGE)
+                    ?: live.findActionableNode("TIME IN", BEEHIVE_PACKAGE, exact = false)
                 if (target != null) {
-                    Log.i(TAG, "Found TIME IN (attempt $attempt), clicking")
-                    clicked = service.clickNodeRobustly(target)
+                    Log.i(TAG, "Found TIME IN (attempt $tapAttempt), clicking")
+                    clicked = live.clickNodeRobustly(target)
                 } else {
-                    Log.w(TAG, "TIME IN not found (attempt $attempt); screen=${service.getScreenTextFor(BEEHIVE_PACKAGE).take(200)}")
+                    Log.w(TAG, "TIME IN not found (attempt $tapAttempt); screen=${live.getScreenTextFor(BEEHIVE_PACKAGE).take(200)}")
                 }
                 if (clicked) break
                 delay(2000)
             }
 
             if (!clicked) {
-                showStatusNotification("Time-In Failed", "Could not find the TIME IN button.")
-                return@launch
+                return@repeat
             }
 
             delay(1000)
@@ -702,9 +735,12 @@ class TaskRunner @Inject constructor(
                 ))
 
                 triggerManagerProvider.get().startLocationTracking()
+                return
             } else {
                 Log.w(TAG, "Time-In popup handling did not confirm success")
                 showStatusNotification("Time-In", "Please confirm your attendance in Beehive.")
+                delay(1500)
+                return@repeat
             }
         }
     }

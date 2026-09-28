@@ -136,23 +136,8 @@ class AutoMateApp : Application() {
             setShowBadge(false)
         }
 
-        // Used only to wake the screen when a geofence arrives while the phone is asleep.
-        // Android ignores FLAG_TURN_SCREEN_ON from a background service, so a full-screen
-        // intent on a high-importance channel is the only supported way to turn the
-        // display on. The channel is silent and the Activity it launches draws nothing.
-        val screenWake = NotificationChannel(
-            CHANNEL_SCREEN_WAKE,
-            "Screen Wake",
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = "Wakes the screen when you arrive somewhere"
-            setSound(null, null)
-            enableVibration(false)
-            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-        }
-
         manager.createNotificationChannels(
-            listOf(morningPrompt, taskStatus, locationAlert, keepAlive, screenWake)
+            listOf(morningPrompt, taskStatus, locationAlert, keepAlive)
         )
     }
 
@@ -162,6 +147,5 @@ class AutoMateApp : Application() {
         const val CHANNEL_TASK_STATUS = "task_status"
         const val CHANNEL_LOCATION_ALERT = "location_alert"
         const val CHANNEL_KEEP_ALIVE = "keep_alive"
-        const val CHANNEL_SCREEN_WAKE = "screen_wake"
     }
 }

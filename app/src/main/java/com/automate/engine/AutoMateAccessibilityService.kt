@@ -337,68 +337,21 @@ class AutoMateAccessibilityService : AccessibilityService() {
      * overlay used for normal launches, so the background-activity-start check passes.
      * A PIN/pattern lockscreen cannot be cleared this way, by design.
      */
+    /**
+     * Gets a non-secure keyguard out of the way when the flow needs to see the screen.
+     *
+     * Deliberately lightweight. A full-screen intent and a bright screen wake lock were
+     * both tried and both failed to lift the display on this MIUI device, while being
+     * exactly the kind of aggressive behaviour MiuiMemoryService cleans up. The only
+     * reliable wake on this device is the WakeActivity above the lock screen, so that is
+     * what this uses; secure lockscreens are left alone.
+     */
     fun wakeAndUnlock(): Boolean {
-        // MIUI builds the lock screen for a full-screen intent but leaves the panel dark:
-        // FLAG_TURN_SCREEN_ON is ignored for non-system apps. An explicit screen wake lock
-        // is the only thing that reliably lights the display here.
-        var lockHeld = false
+        var started = false
         try {
-            val pm = getSystemService(PowerManager::class.java)
-            if (pm != null && !pm.isInteractive) {
-                @Suppress("DEPRECATION")
-                pm.newWakeLock(
-                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
-                    "automate:wake"
-                ).apply {
-                    setReferenceCounted(false)
-                    acquire(15_000)
-                }
-                lockHeld = true
-                Log.i(TAG, "wakeAndUnlock acquired screen wake lock")
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "screen wake lock failed: ${e.message}")
-        }
-        if (lockHeld) Thread.sleep(1500)
-
-        // A full-screen intent is the only mechanism Android honours for turning the
-        // display on from the background. FLAG_TURN_SCREEN_ON on an Activity started by a
-        // background service is silently ignored, and there is no accessibility global
-        // action for waking the device. The target Activity draws nothing, so this is
-        // invisible apart from the screen coming on.
-        var posted = false
-        try {
-            val nm = getSystemService(NotificationManager::class.java)
-            val pending = PendingIntent.getActivity(
-                this, 4242,
-                Intent(this, WakeActivity::class.java).apply {
-                    addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_NO_ANIMATION or
-                            Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
-                    )
-                },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            val notification = Notification.Builder(this, AutoMateApp.CHANNEL_SCREEN_WAKE)
-                .setSmallIcon(android.R.drawable.ic_menu_day)
-                .setContentTitle("AutoMate")
-                .setContentText("Waking up")
-                .setOngoing(true)
-                .setAutoCancel(false)
-                .setFullScreenIntent(pending, true)
-                .build()
-            nm?.notify(WAKE_NOTIFICATION_ID, notification)
-            posted = true
-        } catch (e: Exception) {
-            Log.w(TAG, "wakeAndUnlock could not post full-screen intent: ${e.message}")
-        }
-        // Start the Activity directly as well. The overlay grants the background start
-        // permission, and once the display is lit FLAG_DISMISS_KEYGUARD can clear a
-        // non-secure lockscreen. The Activity is a no-op when the FSI already showed it.
-        if (lockHeld) {
-            val overlaid = attachStealthOverlay()
-            try {
+            val km = getSystemService(KeyguardManager::class.java)
+            if (km != null && km.isKeyguardLocked && !km.isDeviceSecure) {
+                val overlaid = attachStealthOverlay()
                 startActivity(
                     Intent(this, WakeActivity::class.java).apply {
                         addFlags(
@@ -408,25 +361,19 @@ class AutoMateAccessibilityService : AccessibilityService() {
                         )
                     }
                 )
+                started = true
                 Log.i(TAG, "wakeAndUnlock started WakeActivity overlay=$overlaid")
-            } catch (e: Exception) {
-                Log.w(TAG, "WakeActivity start failed: ${e.message}")
+                mainHandler.postDelayed({ detachStealthOverlay() }, 3000)
+            } else {
+                Log.i(TAG, "wakeAndUnlock: screen usable or secure lock; proceeding as-is")
+                started = true
             }
-            mainHandler.postDelayed({ detachStealthOverlay() }, 3000)
+        } catch (e: Exception) {
+            Log.w(TAG, "wakeAndUnlock could not start WakeActivity: ${e.message}")
         }
-
-        Log.i(TAG, "wakeAndUnlock fullScreenIntentPosted=$posted lock=$lockHeld")
-
-        // Clear it once the screen is up so it cannot re-fire later.
-        mainHandler.postDelayed({
-            try {
-                getSystemService(NotificationManager::class.java)?.cancel(WAKE_NOTIFICATION_ID)
-            } catch (e: Exception) {
-                Log.w(TAG, "wake notification cancel failed: ${e.message}")
-            }
-        }, 6000)
-        return posted
+        return started
     }
+
 
     /**
      * Dismisses a system overlay that is covering the target app.

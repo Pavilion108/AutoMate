@@ -93,12 +93,15 @@ class KeepAliveService : Service() {
             override fun onProviderDisabled(provider: String) {}
         }
 
-        // Raw GPS provider: true 3-second intervals, not batched
+        // GPS at 10s with a 5m minimum movement gate. True 3-second raw GPS polling was
+        // the biggest battery and MIUI-kill target: it kept the GPS radio hot all day
+        // every day. Network location below stays at 5s for immediate indoor fixes, so
+        // geofence checks still resolve quickly without burning the GPS radio.
         @Suppress("MissingPermission")
         locationManager?.requestLocationUpdates(
             LocationManager.GPS_PROVIDER,
-            3000L, // 3 seconds
-            0f,    // no minimum distance
+            10_000L,
+            5f,
             gpsListener!!
         )
 
@@ -106,13 +109,13 @@ class KeepAliveService : Service() {
         @Suppress("MissingPermission")
         locationManager?.requestLocationUpdates(
             LocationManager.NETWORK_PROVIDER,
-            3000L,
+            5000L,
             0f,
             gpsListener!!
         )
 
         isLocationTracking = true
-        Log.i(TAG, "Foreground GPS location tracking started (raw GPS, true 3s interval)")
+        Log.i(TAG, "Foreground GPS location tracking started (GPS 10s/5m, network 5s)")
     }
 
     private fun stopForegroundLocationTracking() {

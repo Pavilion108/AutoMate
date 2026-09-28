@@ -134,6 +134,13 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 scope.launch { taskRunner.startTimeInFlow() }
             }
 
+            // "I already clocked in myself in Beehive" — record it so checkout prompts
+            // still fire and future task durations are calculated from the real time.
+            "MANUAL_TIME_IN" -> {
+                Log.i(TAG, "Manual time-in: recording and scheduling checkout")
+                taskRunner.scheduleTimeOutPromptsForManualTimeIn()
+            }
+
             // Manual arm/disarm from the dashboard, or from a shortcut tile.
             "ARM_TODAY" -> {
                 Log.i(TAG, "Manual arm for today")

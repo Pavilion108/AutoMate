@@ -130,6 +130,16 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /**
+     * User already clocked in inside Beehive by hand. Record the time and arm checkout
+     * prompts so the day still ends cleanly and durations are calculated correctly.
+     */
+    fun recordManualTimeIn() {
+        viewModelScope.launch {
+            taskRunner.scheduleTimeOutPromptsForManualTimeIn()
+        }
+    }
+
     private fun getTriggerDescription(task: Task): String {
         return when (task.trigger.type) {
             com.automate.domain.model.TriggerType.GEOFENCE_ENTER -> {
