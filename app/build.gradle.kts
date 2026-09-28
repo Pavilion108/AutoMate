@@ -37,18 +37,31 @@ android {
         // machine (back it up!). Missing it fails the release build loudly rather than
         // silently shipping an unsigned or debug APK.
         create("release") {
-            // Release signing is external to the repo. The keystore lives only on this
-            // machine (back it up!). Missing it fails the release build loudly rather than
-            // silently shipping an unsigned or debug APK.
-            val keyFile = file("/home/polzovatel/.automate-release/keystore.properties")
-            val props = Properties()
-            if (keyFile.exists()) {
-                keyFile.inputStream().use { props.load(it) }
+            // Release signing. Order: explicit env vars (CI), then the dev machine's
+            // keystore.properties. Missing credentials fail the release build loudly
+            // rather than silently shipping an unsigned or debug APK.
+            val envStoreFile = System.getenv("AUTOMATE_STORE_FILE")
+            val envStorePassword = System.getenv("AUTOMATE_STORE_PASSWORD")
+            val envKeyAlias = System.getenv("AUTOMATE_KEY_ALIAS")
+            val envKeyPassword = System.getenv("AUTOMATE_KEY_PASSWORD")
+            if (envStoreFile != null && envStorePassword != null &&
+                envKeyAlias != null && envKeyPassword != null
+            ) {
+                storeFile = file(envStoreFile)
+                storePassword = envStorePassword
+                keyAlias = envKeyAlias
+                keyPassword = envKeyPassword
+            } else {
+                val keyFile = file("/home/polzovatel/.automate-release/keystore.properties")
+                val props = Properties()
+                if (keyFile.exists()) {
+                    keyFile.inputStream().use { props.load(it) }
+                }
+                storeFile = file(props.getProperty("storeFile", "DOES_NOT_EXIST"))
+                storePassword = props.getProperty("storePassword", "DOES_NOT_EXIST")
+                keyAlias = props.getProperty("keyAlias", "DOES_NOT_EXIST")
+                keyPassword = props.getProperty("keyPassword", "DOES_NOT_EXIST")
             }
-            storeFile = file(props.getProperty("storeFile", "DOES_NOT_EXIST"))
-            storePassword = props.getProperty("storePassword", "DOES_NOT_EXIST")
-            keyAlias = props.getProperty("keyAlias", "DOES_NOT_EXIST")
-            keyPassword = props.getProperty("keyPassword", "DOES_NOT_EXIST")
         }
     }
 
